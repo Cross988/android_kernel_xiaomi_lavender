@@ -563,6 +563,148 @@ ifeq ($(CONFIG_WLAN_FEATURE_APF), y)
 HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_apf.o
 endif
 
+ifeq ($(CONFIG_FEATURE_FRAME_INJECTION_SUPPORT), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_frame_inject.o
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_frame_validate.o
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_inject_security.o
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_frame_inject_debug.o
+ifeq ($(CONFIG_WLAN_UNIT_TEST), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_frame_validate_test.o
+endif
+endif
+
+ifeq ($(CONFIG_LITHIUM), y)
+CONFIG_WLAN_FEATURE_DP_RX_THREADS := y
+CONFIG_WLAN_FEATURE_RX_SOFTIRQ_TIME_LIMIT := y
+endif
+
+ifeq ($(CONFIG_WLAN_NUD_TRACKING), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_nud_tracking.o
+endif
+
+ifeq ($(CONFIG_WLAN_FEATURE_PACKET_FILTERING), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_packet_filter.o
+endif
+
+ifeq ($(CONFIG_FEATURE_RSSI_MONITOR), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_rssi_monitor.o
+endif
+
+ifeq ($(CONFIG_FEATURE_BSS_TRANSITION), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_bss_transition.o
+endif
+
+ifeq ($(CONFIG_FEATURE_STATION_INFO), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_station_info.o
+endif
+
+ifeq ($(CONFIG_FEATURE_TX_POWER), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_tx_power.o
+endif
+
+ifeq ($(CONFIG_FEATURE_OTA_TEST), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_ota_test.o
+endif
+
+ifeq ($(CONFIG_FEATURE_ACTIVE_TOS), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_active_tos.o
+endif
+
+ifeq ($(CONFIG_FEATURE_SAR_LIMITS), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_sar_limits.o
+endif
+
+ifeq ($(CONFIG_FEATURE_CONCURRENCY_MATRIX), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_concurrency_matrix.o
+endif
+
+ifeq ($(CONFIG_FEATURE_SAP_COND_CHAN_SWITCH), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_sap_cond_chan_switch.o
+endif
+
+ifeq ($(CONFIG_FEATURE_P2P_LISTEN_OFFLOAD), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_p2p_listen_offload.o
+endif
+
+ifeq ($(CONFIG_WLAN_SYSFS), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_sysfs.o
+endif
+
+ifeq ($(CONFIG_QCACLD_FEATURE_FW_STATE), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_fw_state.o
+endif
+
+ifeq ($(CONFIG_QCACLD_FEATURE_COEX_CONFIG), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_coex_config.o
+endif
+
+ifeq ($(CONFIG_QCACLD_FEATURE_MPTA_HELPER), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_mpta_helper.o
+endif
+
+ifeq ($(CONFIG_WLAN_BCN_RECV_FEATURE), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_bcn_recv.o
+endif
+
+ifeq ($(CONFIG_QCACLD_FEATURE_HW_CAPABILITY), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_hw_capability.o
+endif
+
+ifeq ($(CONFIG_FW_THERMAL_THROTTLE), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_thermal.o
+endif
+
+ifeq ($(CONFIG_WLAN_CFR_ENABLE), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_cfr.o
+endif
+
+ifeq ($(CONFIG_WLAN_HANG_EVENT), y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_hang_event.o
+endif
+
+ifeq ($(CONFIG_FEATURE_GPIO_CFG),y)
+HDD_OBJS += $(HDD_SRC_DIR)/wlan_hdd_gpio.o
+endif
+
+###### OSIF_SYNC ########
+SYNC_DIR := os_if/sync
+SYNC_INC_DIR := $(SYNC_DIR)/inc
+SYNC_SRC_DIR := $(SYNC_DIR)/src
+
+SYNC_INC := \
+	-I$(WLAN_ROOT)/$(SYNC_INC_DIR) \
+	-I$(WLAN_ROOT)/$(SYNC_SRC_DIR) \
+
+SYNC_OBJS := \
+	$(SYNC_SRC_DIR)/osif_sync.o \
+	$(SYNC_SRC_DIR)/osif_driver_sync.o \
+	$(SYNC_SRC_DIR)/osif_psoc_sync.o \
+	$(SYNC_SRC_DIR)/osif_vdev_sync.o \
+
+########### Driver Synchronization Core (DSC) ###########
+DSC_DIR := components/dsc
+DSC_INC_DIR := $(DSC_DIR)/inc
+DSC_SRC_DIR := $(DSC_DIR)/src
+DSC_TEST_DIR := $(DSC_DIR)/test
+
+DSC_INC := \
+	-I$(WLAN_ROOT)/$(DSC_INC_DIR) \
+	-I$(WLAN_ROOT)/$(DSC_SRC_DIR) \
+	-I$(WLAN_ROOT)/$(DSC_TEST_DIR)
+
+DSC_OBJS := \
+	$(DSC_SRC_DIR)/__wlan_dsc.o \
+	$(DSC_SRC_DIR)/wlan_dsc_driver.o \
+	$(DSC_SRC_DIR)/wlan_dsc_psoc.o \
+	$(DSC_SRC_DIR)/wlan_dsc_vdev.o
+
+ifeq ($(CONFIG_DSC_TEST), y)
+	DSC_OBJS += $(DSC_TEST_DIR)/wlan_dsc_test.o
+endif
+
+cppflags-$(CONFIG_DSC_DEBUG) += -DWLAN_DSC_DEBUG
+cppflags-$(CONFIG_DSC_TEST) += -DWLAN_DSC_TEST
+
 ########### HOST DIAG LOG ###########
 HOST_DIAG_LOG_DIR :=	core/utils/host_diag_log
 
@@ -1143,6 +1285,20 @@ WMA_OBJS :=	$(WMA_SRC_DIR)/wma_main.o \
 		$(WMA_SRC_DIR)/wlan_qct_wma_legacy.o\
 		$(WMA_NDP_OBJS)
 
+ifeq ($(CONFIG_FEATURE_FRAME_INJECTION_SUPPORT), y)
+WMA_OBJS += $(WMA_SRC_DIR)/wma_frame_inject.o
+endif
+
+#######DIRECT_BUFFER_RX#########
+ifeq ($(CONFIG_DIRECT_BUF_RX_ENABLE), y)
+DBR_DIR = $(WLAN_COMMON_ROOT)/target_if/direct_buf_rx
+UMAC_DBR_INC := -I$(WLAN_COMMON_INC)/target_if/direct_buf_tx/inc
+UMAC_DBR_OBJS := $(DBR_DIR)/src/target_if_direct_buf_rx_api.o \
+		 $(DBR_DIR)/src/target_if_direct_buf_rx_main.o \
+		 $(WLAN_COMMON_ROOT)/wmi/src/wmi_unified_dbr_api.o \
+		 $(WLAN_COMMON_ROOT)/wmi/src/wmi_unified_dbr_tlv.o
+endif
+
 ifeq ($(CONFIG_WLAN_FEATURE_DSRC), y)
 WMA_OBJS+=	$(WMA_SRC_DIR)/wma_ocb.o
 endif
@@ -1324,6 +1480,40 @@ ifeq ($(CONFIG_CNSS_SDIO), y)
 CDEFINES += -DCONFIG_PLD_SDIO_CNSS
 else
 CDEFINES += -DCONFIG_PLD_PCIE_CNSS
+endif
+endif
+
+cppflags-$(CONFIG_PLD_PCIE_INIT_FLAG) += -DCONFIG_PLD_PCIE_INIT
+cppflags-$(CONFIG_WLAN_FEATURE_DP_RX_THREADS) += -DFEATURE_WLAN_DP_RX_THREADS
+cppflags-$(CONFIG_WLAN_FEATURE_RX_SOFTIRQ_TIME_LIMIT) += -DWLAN_FEATURE_RX_SOFTIRQ_TIME_LIMIT
+cppflags-$(CONFIG_FEATURE_HAL_DELAYED_REG_WRITE) += -DFEATURE_HAL_DELAYED_REG_WRITE
+cppflags-$(CONFIG_SHADOW_WRITE_DELAY) += -DSHADOW_WRITE_DELAY
+
+cppflags-$(CONFIG_PLD_USB_CNSS) += -DCONFIG_PLD_USB_CNSS
+cppflags-$(CONFIG_PLD_SDIO_CNSS2) += -DCONFIG_PLD_SDIO_CNSS2
+cppflags-$(CONFIG_WLAN_RECORD_RX_PADDR) += -DHIF_RECORD_RX_PADDR
+cppflags-$(CONFIG_FEATURE_WLAN_TIME_SYNC_FTM) += -DFEATURE_WLAN_TIME_SYNC_FTM
+
+#For both legacy and lithium chip's monitor mode config
+ifeq ($(CONFIG_FEATURE_MONITOR_MODE_SUPPORT), y)
+cppflags-y += -DFEATURE_MONITOR_MODE_SUPPORT
+else
+cppflags-y += -DDISABLE_MON_CONFIG
+endif
+
+ifeq ($(CONFIG_FEATURE_FRAME_INJECTION_SUPPORT), y)
+cppflags-y += -DFEATURE_FRAME_INJECTION_SUPPORT
+# Enable monitor mode support for frame injection
+CONFIG_FEATURE_MONITOR_MODE_SUPPORT := y
+endif
+
+#Enable NL80211 test mode
+cppflags-$(CONFIG_NL80211_TESTMODE) += -DWLAN_NL80211_TESTMODE
+
+# Flag to enable bus auto suspend
+ifeq ($(CONFIG_HIF_PCI), y)
+ifeq ($(CONFIG_BUS_AUTO_SUSPEND), y)
+cppflags-y += -DFEATURE_RUNTIME_PM
 endif
 endif
 

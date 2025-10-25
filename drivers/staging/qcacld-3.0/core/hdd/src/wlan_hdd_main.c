@@ -30,6 +30,9 @@
 #include <linux/cpu.h>
 #include <linux/etherdevice.h>
 #include <linux/firmware.h>
+#include <linux/kernel.h>
+#include <linux/cred.h>
+#include <linux/uidgid.h>
 #include <wlan_hdd_tx_rx.h>
 #include <wni_api.h>
 #include <wlan_hdd_cfg.h>
@@ -91,6 +94,9 @@
 #include "hif.h"
 #include "wma.h"
 #include "cds_concurrency.h"
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+#include "wma_frame_inject.h"
+#endif
 #include "wlan_hdd_tsf.h"
 #include "wlan_hdd_green_ap.h"
 #include "bmi.h"
@@ -104,6 +110,12 @@
 #include "cds_utils.h"
 #include "sir_api.h"
 #include "wlan_hdd_spectralscan.h"
+#include "wlan_hdd_oemdata.h"
+#include "wlan_hdd_rx_monitor.h"
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+#include "wlan_hdd_frame_inject.h"
+#include "wlan_hdd_frame_inject_debug.h"
+#endif
 #include "sme_power_save_api.h"
 #include "wlan_hdd_sysfs.h"
 #ifdef WLAN_FEATURE_APF
@@ -187,7 +199,16 @@ static qdf_wake_lock_t wlan_wake_lock;
 #define WOW_MAX_PATTERN_SIZE 64
 
 #define IS_IDLE_STOP (!cds_is_driver_unloading() && \
-		      !cds_is_driver_recovering())
+		      !cds_is_driver_recovering() && !cds_is_driver_loading())
+
+#define HDD_FW_VER_MAJOR_SPID(tgt_fw_ver)     ((tgt_fw_ver & 0xf0000000) >> 28)
+#define HDD_FW_VER_MINOR_SPID(tgt_fw_ver)     ((tgt_fw_ver & 0xf000000) >> 24)
+#define HDD_FW_VER_SIID(tgt_fw_ver)           ((tgt_fw_ver & 0xf00000) >> 20)
+#define HDD_FW_VER_CRM_ID(tgt_fw_ver)         (tgt_fw_ver & 0x7fff)
+#define HDD_FW_VER_SUB_ID(tgt_fw_ver_ext) \
+(((tgt_fw_ver_ext & 0x1c00) >> 6) | ((tgt_fw_ver_ext & 0xf0000000) >> 28))
+#define HDD_FW_VER_REL_ID(tgt_fw_ver_ext) \
+((tgt_fw_ver_ext &  0xf800000) >> 23)
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0))
 static const struct wiphy_wowlan_support wowlan_support_reg_init = {
@@ -1974,6 +1995,26 @@ static int __hdd_mon_open(struct net_device *dev)
 		return -EINVAL;
 	}
 
+	/*
+	 * Some Android daemons repeatedly issue ifup while monitor mode is
+	 * active. Treat monitor open as idempotent once the interface is already
+	 * opened to avoid re-creating monitor sessions.
+	 */
+	if (hdd_get_conparam() == QDF_GLOBAL_MONITOR_MODE &&
+	    test_bit(DEVICE_IFACE_OPENED, &adapter->event_flags)) {
+		/*
+		 * Keep duplicate monitor ifup idempotent, but re-assert carrier
+		 * and queues so userspace does not observe ENETDOWN after daemon
+		 * races.
+		 */
+		wlan_hdd_netif_queue_control(adapter,
+					     WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
+					     WLAN_CONTROL_PATH);
+		hdd_warn_rl("Ignoring duplicate monitor ifup from %s (queues/carrier forced up)",
+			    current->comm);
+		return 0;
+	}
+
 	hdd_mon_mode_ether_setup(dev);
 
 	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE)
@@ -2701,6 +2742,25 @@ static int __hdd_stop(struct net_device *dev)
 		return ret;
 	}
 
+	/*
+	 * In monitor mode, Android userspace daemons can still issue non-root
+	 * ifdown on wlan0 and tear monitor down unexpectedly, causing ENETDOWN
+	 * in injection/scanning tools. Ignore those requests.
+	 */
+	if (hdd_get_conparam() == QDF_GLOBAL_MONITOR_MODE &&
+	    !uid_eq(current_euid(), GLOBAL_ROOT_UID) &&
+	    (wlan_hdd_is_session_type_monitor(adapter->device_mode) ||
+	     dev->type == ARPHRD_IEEE80211_RADIOTAP)) {
+		hdd_warn_rl("Ignoring monitor ifdown from %s", current->comm);
+		return 0;
+	}
+
+	if (hdd_get_conparam() == QDF_GLOBAL_MONITOR_MODE &&
+	    (wlan_hdd_is_session_type_monitor(adapter->device_mode) ||
+	     dev->type == ARPHRD_IEEE80211_RADIOTAP)) {
+		hdd_warn_rl("monitor ifdown request accepted from %s", current->comm);
+	}
+
 	/* Nothing to be done if the interface is not opened */
 	if (false == test_bit(DEVICE_IFACE_OPENED, &adapter->event_flags)) {
 		hdd_err("NETDEV Interface is not OPENED");
@@ -3239,6 +3299,7 @@ static const struct net_device_ops wlan_drv_ops = {
 static const struct net_device_ops wlan_mon_drv_ops = {
 	.ndo_open = hdd_mon_open,
 	.ndo_stop = hdd_stop,
+	.ndo_start_xmit = hdd_hard_start_xmit,
 	.ndo_get_stats = hdd_get_stats,
 };
 
@@ -4471,6 +4532,7 @@ hdd_adapter_t *hdd_open_adapter(hdd_context_t *hdd_ctx, uint8_t session_type,
 {
 	hdd_adapter_t *adapter = NULL;
 	QDF_STATUS status = QDF_STATUS_E_FAILURE;
+        int i;
 	hdd_cfg80211_state_t *cfgState;
 
 	if (hdd_ctx->current_intf_count >= hdd_ctx->max_intf_count) {
@@ -4666,6 +4728,8 @@ hdd_adapter_t *hdd_open_adapter(hdd_context_t *hdd_ctx, uint8_t session_type,
 
 	cfgState = WLAN_HDD_GET_CFG_STATE_PTR(adapter);
 	mutex_init(&cfgState->remain_on_chan_ctx_lock);
+	for (i = 0; i < NET_DEV_HOLD_ID_MAX; i++)
+		qdf_atomic_init(&adapter->net_dev_hold_ref_count[i]);
 
 	if (QDF_STATUS_SUCCESS == status)
 		status = hdd_attach_adapter(hdd_ctx, adapter);
@@ -4705,6 +4769,13 @@ hdd_adapter_t *hdd_open_adapter(hdd_context_t *hdd_ctx, uint8_t session_type,
 	if (adapter->device_mode == QDF_STA_MODE)
 		wlan_hdd_debugfs_csr_init(adapter);
 
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+        /* Initialize frame injection for all adapters */
+        if (QDF_STATUS_SUCCESS != hdd_init_frame_injection(adapter)) {
+                hdd_err("Failed to initialize frame injection for adapter");
+                /* Continue without frame injection support */
+        }
+#endif
 	return adapter;
 
 err_free_netdev:
@@ -4717,8 +4788,12 @@ err_free_netdev:
 QDF_STATUS hdd_close_adapter(hdd_context_t *hdd_ctx, hdd_adapter_t *adapter,
 			     bool rtnl_held)
 {
-	hdd_adapter_list_node_t *adapterNode, *pCurrent, *pNext;
-	QDF_STATUS status;
+        hdd_adapter_list_node_t *adapterNode, *pCurrent, *pNext;
+        QDF_STATUS status;
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+        /* Cleanup frame injection */
+        hdd_deinit_frame_injection(adapter);
+#endif
 
 	hdd_info("enter(%s)", netdev_name(adapter->dev));
 
@@ -6889,11 +6964,15 @@ static void hdd_wlan_exit(hdd_context_t *hdd_ctx)
 
 	qdf_nbuf_deinit_replenish_timer();
 	hdd_bus_bandwidth_destroy(hdd_ctx);
-
-	if (QDF_GLOBAL_MONITOR_MODE ==  hdd_get_conparam()) {
-		hdd_info("Release wakelock for monitor mode!");
-		qdf_wake_lock_release(&hdd_ctx->monitor_mode_wakelock,
-				WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
+        if (QDF_GLOBAL_MONITOR_MODE ==  hdd_get_conparam()) {
+                hdd_info("Release wakelock for monitor mode!");
+                qdf_wake_lock_release(&hdd_ctx->monitor_mode_wakelock,
+                                WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
+                {
+                        tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
+                        if (wma)
+                                wma_injection_pre_stop_cleanup(wma);
+                }
 	}
 
 	qdf_spinlock_destroy(&hdd_ctx->hdd_adapter_lock);
@@ -12663,8 +12742,20 @@ int hdd_init(void)
 	hdd_trace_init();
 	hdd_register_debug_callback();
 
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+        {
+                QDF_STATUS status;
+                /* Initialize frame injection debug interfaces */
+                status = hdd_injection_init_debug_interfaces();
+                if (QDF_IS_STATUS_ERROR(status)) {
+                        hdd_warn("Failed to initialize frame injection debug interfaces: %d", status);
+                        /* Continue without debug interfaces - not critical */
+                }
+        }
+#endif
+        return 0;
 err_out:
-	return ret;
+        return ret;
 }
 
 /**
@@ -12676,6 +12767,11 @@ err_out:
  */
 void hdd_deinit(void)
 {
+
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+	/* Cleanup frame injection debug interfaces */
+	hdd_injection_deinit_debug_interfaces();
+#endif
 
 #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
 	wlan_logging_sock_deinit_svc();
@@ -12704,6 +12800,23 @@ static ssize_t wlan_hdd_state_ctrl_param_write(struct file *filp,
 	static const char wlan_on_str[] = "ON";
 	int ret;
 	unsigned long rc;
+	struct hdd_context *hdd_ctx = cds_get_context(QDF_MODULE_ID_HDD);
+	bool monitor_active = false;
+	bool monitor_mode_global = false;
+	bool turning_on = false;
+
+	monitor_mode_global = (hdd_get_conparam() == QDF_GLOBAL_MONITOR_MODE);
+	if (monitor_mode_global)
+		monitor_active = true;
+
+	if (hdd_ctx) {
+		struct hdd_adapter *mon_adapter;
+
+		mon_adapter = hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE);
+		if (mon_adapter &&
+		    test_bit(DEVICE_IFACE_OPENED, &mon_adapter->event_flags))
+			monitor_active = true;
+	}
 
 	if (copy_from_user(buf, user_buf, 3)) {
 		pr_err("Failed to read buffer\n");
@@ -12711,12 +12824,25 @@ static ssize_t wlan_hdd_state_ctrl_param_write(struct file *filp,
 	}
 
 	if (strncmp(buf, wlan_off_str, strlen(wlan_off_str)) == 0) {
+		if (monitor_active &&
+		    !uid_eq(current_euid(), GLOBAL_ROOT_UID)) {
+			hdd_warn_rl("Ignoring framework wifi OFF while monitor mode is active (%s)",
+				    current->comm);
+			goto exit;
+		}
 		pr_debug("Wifi turning off from UI\n");
 		goto exit;
 	}
 
 	if (strncmp(buf, wlan_on_str, strlen(wlan_on_str)) == 0) {
-		pr_info("Wifi Turning On from UI\n");
+		if (monitor_active &&
+		    !uid_eq(current_euid(), GLOBAL_ROOT_UID)) {
+			hdd_warn_rl("Ignoring framework wifi ON while monitor mode is active (%s)",
+				    current->comm);
+			goto exit;
+		}
+		pr_debug("Wifi Turning On from UI\n");
+		turning_on = true;
 	}
 
 	if (strncmp(buf, wlan_on_str, strlen(wlan_on_str)) != 0) {
@@ -12812,7 +12938,6 @@ static void wlan_hdd_state_ctrl_param_destroy(void)
 /**
  * __hdd_module_init - Module init helper
  *
- * Module init helper function used by both module and static driver.
  *
  * Return: 0 for success, errno on failure
  */

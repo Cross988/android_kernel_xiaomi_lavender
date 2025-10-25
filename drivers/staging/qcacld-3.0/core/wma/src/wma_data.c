@@ -58,6 +58,7 @@
 
 #include "dfs.h"
 #include "wma_internal.h"
+#include "wma_frame_inject.h"
 #include "cdp_txrx_flow_ctrl_legacy.h"
 #include "cdp_txrx_cmn.h"
 #include "cdp_txrx_misc.h"
@@ -1487,6 +1488,9 @@ wma_mgmt_tx_dload_comp_hldr(void *wma_context, qdf_nbuf_t netbuf,
 	void *mac_context = wma_handle->mac_context;
 
 	WMA_LOGD("Tx Complete Status %d", status);
+
+	if (WMA_IS_INJECTION_DESC_ID(QDF_NBUF_CB_MGMT_TXRX_DESC_ID(netbuf)))
+		return;
 
 	if (!wma_handle->tx_frm_download_comp_cb) {
 		WMA_LOGE("Tx Complete Cb not registered by umac");

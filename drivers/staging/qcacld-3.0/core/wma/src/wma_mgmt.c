@@ -64,6 +64,11 @@
 #include <cdp_txrx_cmn.h>
 #include <cdp_txrx_misc.h>
 #include <qdf_crypto.h>
+#include "wma_frame_inject.h"
+
+#if !defined(REMOVE_PKT_LOG)
+#include <wlan_logging_sock_svc.h>
+#endif
 
 /**
  * wma_send_bcn_buf_ll() - prepare and send beacon buffer to fw for LL
@@ -3021,25 +3026,41 @@ static int wma_process_mgmt_tx_completion(tp_wma_handle wma_handle,
 		WMA_LOGE("%s: NULL pdev pointer", __func__);
 		return -EINVAL;
 	}
-	if (desc_id >= WMI_DESC_POOL_MAX) {
-		WMA_LOGE("%s: Invalid desc id %d", __func__, desc_id);
-		return -EINVAL;
-	}
-
-	WMA_LOGD("%s: status: %s wmi_desc_id: %d", __func__,
-		wma_get_status_str(status), desc_id);
-
-	wmi_desc = (struct wmi_desc_t *)
-			(&wma_handle->wmi_desc_pool.array[desc_id]);
-
-	if (!wmi_desc) {
-		WMA_LOGE("%s: Invalid wmi desc", __func__);
-		return -EINVAL;
-	}
-
-	if (wmi_desc->nbuf)
-		qdf_nbuf_unmap_single(pdev->osdev, wmi_desc->nbuf,
-					  QDF_DMA_TO_DEVICE);
+        if (desc_id >= WMI_DESC_POOL_MAX) {
+                WMA_LOGE("%s: Invalid desc id %d", __func__, desc_id);
+                return -EINVAL;
+        }
+        WMA_LOGD("%s: status: %s wmi_desc_id: %d", __func__,
+                wma_get_status_str(status), desc_id);
+        wmi_desc = (struct wmi_desc_t *)
+                        (&wma_handle->wmi_desc_pool.array[desc_id]);
+        if (!wmi_desc) {
+                WMA_LOGE("%s: Invalid wmi desc", __func__);
+                return -EINVAL;
+        }
+        if (wmi_desc->nbuf)
+                qdf_nbuf_unmap_single(pdev->osdev, wmi_desc->nbuf,
+                                          QDF_DMA_TO_DEVICE);
+        /*
+         * Monitor-mode injection uses dedicated descriptor ids that are not
+         * backed by MGMT_TXRX pool entries.
+         */
+        if (desc_id == 0 || WMA_IS_INJECTION_DESC_ID(desc_id)) {
+                uint32_t norm_status = status;
+                if (status >= WMI_MGMT_TX_COMP_TYPE_MAX) {
+                        static bool inj_ext_status_logged;
+                        norm_status = status & 0x3;
+                        if (!inj_ext_status_logged) {
+                                wma_info("Injection: FW extended status 0x%x normalised to %u (%s)",
+                                         status, norm_status,
+                                         wma_get_status_str(norm_status));
+                                inj_ext_status_logged = true;
+                        }
+                }
+                wma_handle_injection_fw_response(wma_handle, desc_id,
+                                                norm_status);
+                return 0;
+        }
 
 	packetdump_cb = wma_handle->wma_mgmt_tx_packetdump_cb;
 	if (packetdump_cb)

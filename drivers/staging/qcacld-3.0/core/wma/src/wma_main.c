@@ -67,6 +67,8 @@
 #include "cdp_txrx_flow_ctrl_v2.h"
 #include "cdp_txrx_ipa.h"
 #include "wma_nan_datapath.h"
+#include "hif_main.h"
+#include "wma_frame_inject.h"
 
 #define WMA_LOG_COMPLETION_TIMER 3000 /* 3 seconds */
 
@@ -3015,6 +3017,13 @@ QDF_STATUS wma_open(void *cds_context,
 	qdf_atomic_init(&wma_handle->peer_dbg->index);
 	qdf_atomic_set(&wma_handle->peer_dbg->index, -1);
 
+        /* Initialize frame injection queue */
+        qdf_status = wma_init_injection_queue(wma_handle);
+        if (qdf_status != QDF_STATUS_SUCCESS) {
+                WMA_LOGE("%s: Failed to initialize injection queue: %d",
+                         __func__, qdf_status);
+                /* Continue initialization - injection queue failure is not fatal */
+        }
 	return QDF_STATUS_SUCCESS;
 
 err_dbglog_init:
@@ -4168,10 +4177,16 @@ QDF_STATUS wma_close(void *cds_ctx)
 		wmi_desc_pool_deinit(wma_handle);
 	}
 
-	if (wma_handle->peer_dbg) {
-		qdf_mem_free(wma_handle->peer_dbg);
-		wma_handle->peer_dbg = NULL;
-	}
+        if (wma_handle->peer_dbg) {
+                qdf_mem_free(wma_handle->peer_dbg);
+                wma_handle->peer_dbg = NULL;
+        }
+        /* Deinitialize frame injection queue */
+        qdf_status = wma_deinit_injection_queue(wma_handle);
+        if (qdf_status != QDF_STATUS_SUCCESS) {
+                WMA_LOGE("%s: Failed to deinitialize injection queue: %d",
+                         __func__, qdf_status);
+        }
 
 	WMA_LOGD("%s: Exit", __func__);
 	return QDF_STATUS_SUCCESS;

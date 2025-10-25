@@ -53,6 +53,33 @@
 #include "wlan_hdd_nan_datapath.h"
 #include "target_if_def_config.h"
 #include <qdf_idr.h>
+#if defined(CONFIG_HL_SUPPORT)
+#include "wlan_tgt_def_config_hl.h"
+#else
+#include "wlan_tgt_def_config.h"
+#endif
+#include <wlan_objmgr_cmn.h>
+#include <wlan_objmgr_global_obj.h>
+#include <wlan_objmgr_psoc_obj.h>
+#include <wlan_objmgr_pdev_obj.h>
+#include <wlan_objmgr_vdev_obj.h>
+#include <wlan_objmgr_peer_obj.h>
+#include "wlan_pmo_ucfg_api.h"
+#ifdef WIFI_POS_CONVERGED
+#include "os_if_wifi_pos.h"
+#include "wifi_pos_api.h"
+#else
+#include "wlan_hdd_oemdata.h"
+#endif
+#include "wlan_hdd_he.h"
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+#include "wlan_hdd_frame_inject.h"
+#endif
+
+#include <net/neighbour.h>
+#include <net/netevent.h>
+#include "wlan_hdd_nud_tracking.h"
+#include "wlan_hdd_twt.h"
 #include "wma_sar_public_structs.h"
 
 /** Number of Tx Queues */
@@ -1664,6 +1691,17 @@ struct hdd_adapter_s {
 #endif
 	struct hdd_apf_context apf_context;
 	bool send_mode_change;
+	bool handle_feature_update;
+
+	qdf_work_t netdev_features_update_work;
+	uint8_t gro_disallowed[DP_MAX_RX_THREADS];
+	uint8_t gro_flushed[DP_MAX_RX_THREADS];
+	bool delete_in_progress;
+	qdf_atomic_t net_dev_hold_ref_count[NET_DEV_HOLD_ID_MAX];
+
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+	struct hdd_injection_ctx *injection_ctx;
+#endif
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(pAdapter) (&(pAdapter)->sessionCtx.station)

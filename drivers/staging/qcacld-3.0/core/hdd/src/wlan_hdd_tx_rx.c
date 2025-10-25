@@ -52,6 +52,9 @@
 #include <wlan_hdd_tsf.h>
 #include <net/tcp.h>
 #include "wma_api.h"
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+#include "wlan_hdd_frame_inject.h"
+#endif
 
 #ifdef QCA_LL_TX_FLOW_CONTROL_V2
 /*
@@ -805,7 +808,215 @@ void hdd_tx_rx_collect_connectivity_stats_info(struct sk_buff *skb,
 }
 
 /**
- * hdd_is_tx_allowed() - check if Tx is allowed based on current peer state
+ * hdd_is_xmit_allowed_on_ndi() - Verify if xmit is allowed on NDI
+ * @adapter: The adapter structure
+ *
+ * Return: True if xmit is allowed on NDI and false otherwise
+ */
+static bool hdd_is_xmit_allowed_on_ndi(struct hdd_adapter *adapter)
+{
+	enum nan_datapath_state state;
+
+	state = ucfg_nan_get_ndi_state(adapter->vdev);
+	return (state == NAN_DATA_NDI_CREATED_STATE ||
+		state == NAN_DATA_CONNECTED_STATE ||
+		state == NAN_DATA_CONNECTING_STATE ||
+		state == NAN_DATA_PEER_CREATE_STATE);
+}
+
+/**
+ * hdd_get_transmit_mac_addr() - Get the mac address to validate the xmit
+ * @adapter: The adapter structure
+ * @skb: The network buffer
+ * @mac_addr_tx_allowed: The mac address to be filled
+ *
+ * Return: None
+ */
+static
+void hdd_get_transmit_mac_addr(struct hdd_adapter *adapter, struct sk_buff *skb,
+			       struct qdf_mac_addr *mac_addr_tx_allowed)
+{
+	struct hdd_station_ctx *sta_ctx = &adapter->session.station;
+	bool is_mc_bc_addr = false;
+
+	if (QDF_NBUF_CB_GET_IS_BCAST(skb) || QDF_NBUF_CB_GET_IS_MCAST(skb))
+		is_mc_bc_addr = true;
+
+	if (adapter->device_mode == QDF_IBSS_MODE) {
+		if (is_mc_bc_addr)
+			qdf_copy_macaddr(mac_addr_tx_allowed,
+					 &adapter->mac_addr);
+		else
+			qdf_copy_macaddr(mac_addr_tx_allowed,
+					 (struct qdf_mac_addr *)skb->data);
+	} else if (adapter->device_mode == QDF_NDI_MODE &&
+		   hdd_is_xmit_allowed_on_ndi(adapter)) {
+		if (is_mc_bc_addr)
+			qdf_copy_macaddr(mac_addr_tx_allowed,
+					 &adapter->mac_addr);
+		else
+			qdf_copy_macaddr(mac_addr_tx_allowed,
+					 (struct qdf_mac_addr *)skb->data);
+	} else {
+		if (sta_ctx->conn_info.conn_state ==
+		    eConnectionState_Associated)
+			qdf_copy_macaddr(mac_addr_tx_allowed,
+					 &sta_ctx->conn_info.bssid);
+	}
+}
+
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+/**
+ * hdd_is_monitor_tx_dev() - detect monitor-mode netdev tx context
+ * @adapter: HDD adapter bound to @dev
+ * @dev: Linux net device receiving tx frame
+ *
+ * Return: true if tx path should be treated as monitor injection
+ */
+static bool hdd_is_monitor_tx_dev(struct hdd_adapter *adapter,
+				  struct net_device *dev)
+{
+	if (!adapter || !dev)
+		return false;
+
+	if (adapter->device_mode == QDF_MONITOR_MODE)
+		return true;
+
+	if (dev->type == ARPHRD_IEEE80211_RADIOTAP)
+		return true;
+
+	if (dev->ieee80211_ptr &&
+	    dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
+		return true;
+
+	return false;
+}
+
+/**
+ * hdd_monitor_mode_tx_inject() - inject frame from monitor netdev
+ * @adapter: HDD adapter
+ * @dev: net_device carrying frame
+ * @skb: Tx skb containing radiotap + 802.11, or raw 802.11 frame
+ *
+ * Return: None
+ */
+static void hdd_monitor_mode_tx_inject(struct hdd_adapter *adapter,
+				       struct net_device *dev,
+				       struct sk_buff *skb)
+{
+	static bool mon_tx_path_logged;
+	static bool mon_ctx_force_logged;
+	struct ieee80211_radiotap_header *rthdr;
+	struct inject_frame_req *req;
+	uint8_t *frame_data;
+	uint16_t rtap_len;
+	uint32_t frame_len;
+	uint64_t now;
+	QDF_STATUS status;
+	bool has_radiotap = false;
+
+	if (!adapter || !adapter->injection_ctx || !skb)
+		goto drop;
+
+	/*
+	 * Monitor TX can be reached even when adapter->device_mode has not been
+	 * switched to QDF_MONITOR_MODE. Keep injection context aligned with the
+	 * actual netdev iftype seen on the TX path.
+	 */
+	if (!adapter->injection_ctx->is_monitor_mode) {
+		adapter->injection_ctx->is_monitor_mode = true;
+		if (!mon_ctx_force_logged) {
+			hdd_warn("monitor tx: forcing injection monitor context on adapter vdev=%u iftype=%d",
+				 adapter->vdev_id,
+				 (dev && dev->ieee80211_ptr) ?
+				 dev->ieee80211_ptr->iftype : -1);
+			mon_ctx_force_logged = true;
+		}
+	}
+
+	if (skb->len < 10) {
+		hdd_err_rl("monitor tx: invalid skb len %u", skb->len);
+		goto drop;
+	}
+
+	/*
+	 * Prefer radiotap format (normal for monitor TX), but allow fallback to
+	 * raw 802.11 if userspace or netdev path does not prepend radiotap.
+	 */
+	if (skb->len >= sizeof(*rthdr)) {
+		rthdr = (struct ieee80211_radiotap_header *)skb->data;
+		if (rthdr->it_version == 0) {
+			rtap_len = ieee80211_get_radiotap_len(skb->data);
+			if (rtap_len >= sizeof(*rthdr) && rtap_len < skb->len)
+				has_radiotap = true;
+		}
+	}
+
+	if (has_radiotap) {
+		frame_data = skb->data + rtap_len;
+		frame_len = skb->len - rtap_len;
+	} else {
+		frame_data = skb->data;
+		frame_len = skb->len;
+		hdd_warn_rl("monitor tx: no radiotap header (dev_type=%u), using raw 802.11 len=%u",
+			    dev ? dev->type : 0, frame_len);
+	}
+
+	if (!frame_len || frame_len > HDD_FRAME_INJECT_MAX_SIZE) {
+		hdd_err_rl("monitor tx: invalid 802.11 frame length %u", frame_len);
+		goto drop;
+	}
+
+	if (!mon_tx_path_logged) {
+		hdd_warn("monitor tx path active: mode=%d iftype=%d dev_type=%u radiotap=%u skb_len=%u frame_len=%u vdev=%u",
+			 adapter->device_mode,
+			 (dev && dev->ieee80211_ptr) ? dev->ieee80211_ptr->iftype : -1,
+			 dev ? dev->type : 0, has_radiotap ? 1 : 0,
+			 skb->len, frame_len, adapter->vdev_id);
+		mon_tx_path_logged = true;
+	}
+
+	req = qdf_mem_malloc(sizeof(*req));
+	if (!req)
+		goto drop;
+
+	req->frame_data = qdf_mem_malloc(frame_len);
+	if (!req->frame_data) {
+		qdf_mem_free(req);
+		goto drop;
+	}
+
+	qdf_mem_copy(req->frame_data, frame_data, frame_len);
+
+	now = qdf_get_log_timestamp();
+
+	req->frame_len = frame_len;
+	req->tx_flags = 0;
+	req->retry_count = 0;
+	req->tx_rate = 0;
+	req->timestamp = now;
+	req->session_id = (uint32_t)now;
+	req->submit_time = now;
+	req->queue_time = 0;
+	req->process_time = 0;
+	req->complete_time = 0;
+
+	status = hdd_process_frame_injection(adapter, req);
+	if (QDF_IS_STATUS_ERROR(status)) {
+		hdd_err_rl("monitor tx: frame injection enqueue failed: %d", status);
+		qdf_mem_free(req->frame_data);
+		qdf_mem_free(req);
+	}
+
+drop:
+	kfree_skb(skb);
+}
+#endif
+
+#ifdef HANDLE_BROADCAST_EAPOL_TX_FRAME
+/**
+ * wlan_hdd_fix_broadcast_eapol() - Fix broadcast eapol
+ * @adapter: pointer to adapter
  * @skb: pointer to OS packet (sk_buff)
  * @peer_id: Peer STA ID in peer table
  *
@@ -879,6 +1090,13 @@ static netdev_tx_t __hdd_hard_start_xmit(struct sk_buff *skb,
 
 	uint8_t pkt_type = 0;
 	bool is_arp = false;
+
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+	if (hdd_is_monitor_tx_dev(adapter, dev)) {
+		hdd_monitor_mode_tx_inject(adapter, dev, skb);
+		return;
+	}
+#endif
 
 #ifdef QCA_WIFI_FTM
 	if (hdd_get_conparam() == QDF_GLOBAL_FTM_MODE) {
@@ -2180,7 +2398,7 @@ void wlan_hdd_netif_queue_control(hdd_adapter_t *adapter,
 	uint8_t index;
 
 	if ((!adapter) || (WLAN_HDD_ADAPTER_MAGIC != adapter->magic) ||
-		 (!adapter->dev)) {
+			(!adapter->dev)) {
 		hdd_err("adapter is invalid");
 		return;
 	}
@@ -2353,6 +2571,14 @@ int hdd_set_mon_rx_cb(struct net_device *dev)
 				     adapter->macAddressCurrent.bytes);
 	if (QDF_STATUS_SUCCESS != qdf_status) {
 		hdd_err("sme_create_mon_session() failed to register. Status= %d [0x%08X]",
+			qdf_status, qdf_status);
+		goto exit;
+	}
+
+	/* peer is created wma_vdev_attach->wma_create_peer */
+	qdf_status = cdp_peer_register(soc, OL_TXRX_PDEV_ID, &sta_desc);
+	if (QDF_STATUS_SUCCESS != qdf_status) {
+		hdd_err("cdp_peer_register() failed to register. Status= %d [0x%08X]",
 			qdf_status, qdf_status);
 	}
 exit:
