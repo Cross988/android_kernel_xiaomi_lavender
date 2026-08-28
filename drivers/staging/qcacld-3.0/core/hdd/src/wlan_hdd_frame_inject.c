@@ -40,13 +40,13 @@
 
 /* Logging macros for frame injection */
 #define hdd_inject_debug(params...) \
-	QDF_TRACE_DEBUG(QDF_MODULE_ID_HDD, params)
+		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_DEBUG, params)
 #define hdd_inject_info(params...) \
-	QDF_TRACE_INFO(QDF_MODULE_ID_HDD, params)
+		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_INFO, params)
 #define hdd_inject_warn(params...) \
-	QDF_TRACE_WARN(QDF_MODULE_ID_HDD, params)
+		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_WARN, params)
 #define hdd_inject_err(params...) \
-	QDF_TRACE_ERROR(QDF_MODULE_ID_HDD, params)
+		QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR, params)
 
 /* Global session ID counter */
 static qdf_atomic_t g_injection_session_id;
@@ -78,7 +78,7 @@ static uint32_t hdd_get_next_session_id(void)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_init_frame_injection(struct hdd_adapter *adapter)
+QDF_STATUS hdd_init_frame_injection(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 	QDF_STATUS status;
@@ -138,17 +138,8 @@ QDF_STATUS hdd_init_frame_injection(struct hdd_adapter *adapter)
 	qdf_create_work(0, &injection_ctx->recovery_ctx.recovery_work,
 			hdd_injection_recovery_work, adapter);
 	
-	status = qdf_timer_init(NULL, &injection_ctx->recovery_ctx.recovery_timer,
-				hdd_injection_recovery_timer, adapter, QDF_TIMER_TYPE_SW);
-	if (QDF_IS_STATUS_ERROR(status)) {
-		hdd_inject_err("Failed to initialize recovery timer: %d", status);
-		qdf_destroy_work(NULL, &injection_ctx->recovery_ctx.recovery_work);
-		hdd_deinit_injection_security_ctx(&injection_ctx->security_ctx);
-		qdf_spinlock_destroy(&injection_ctx->queue_lock);
-		qdf_list_destroy(&injection_ctx->injection_queue);
-		qdf_mem_free(injection_ctx);
-		return status;
-	}
+        qdf_timer_init(NULL, &injection_ctx->recovery_ctx.recovery_timer,
+                                hdd_injection_recovery_timer, adapter, QDF_TIMER_TYPE_SW);
 
 	/* Initialize work queue for processing injection requests */
 	qdf_create_work(0, &injection_ctx->queue_work, 
@@ -176,7 +167,7 @@ QDF_STATUS hdd_init_frame_injection(struct hdd_adapter *adapter)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_deinit_frame_injection(struct hdd_adapter *adapter)
+QDF_STATUS hdd_deinit_frame_injection(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 	struct inject_frame_req *req;
@@ -249,7 +240,7 @@ QDF_STATUS hdd_deinit_frame_injection(struct hdd_adapter *adapter)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_frame_inject_enable(struct hdd_adapter *adapter)
+QDF_STATUS hdd_frame_inject_enable(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 
@@ -275,7 +266,7 @@ QDF_STATUS hdd_frame_inject_enable(struct hdd_adapter *adapter)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_frame_inject_disable(struct hdd_adapter *adapter)
+QDF_STATUS hdd_frame_inject_disable(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 
@@ -377,7 +368,7 @@ static QDF_STATUS hdd_create_injection_request(struct hdd_frame_inject_ioctl *io
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_process_frame_injection(struct hdd_adapter *adapter,
+QDF_STATUS hdd_process_frame_injection(hdd_adapter_t *adapter,
 				       struct inject_frame_req *req)
 {
 	struct hdd_injection_ctx *injection_ctx;
@@ -497,7 +488,7 @@ QDF_STATUS hdd_process_frame_injection(struct hdd_adapter *adapter,
  */
 int hdd_frame_inject_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 {
-	struct hdd_adapter *adapter;
+	hdd_adapter_t *adapter;
 	struct hdd_context *hdd_ctx;
 	struct hdd_frame_inject_ioctl ioctl_data;
 	struct inject_frame_req *req = NULL;
@@ -581,10 +572,8 @@ void hdd_process_injection_queue_work(void *arg)
 	struct inject_frame_req *req;
 	struct net_device *tx_dev;
 	qdf_list_node_t *node;
-	void *soc;
 	QDF_STATUS status;
 	uint8_t tx_vdev_id;
-	uint8_t cdp_mon_vdev_id;
 	uint8_t mon_adapter_vdev_id;
 	bool mon_adapter_open;
 	bool monitor_mode_active;
@@ -614,8 +603,7 @@ void hdd_process_injection_queue_work(void *arg)
 
 		/* Send frame to WMA layer for transmission */
 		if (injection_ctx->wma_handle) {
-			tx_vdev_id = injection_ctx->adapter->vdev_id;
-			cdp_mon_vdev_id = 0xff;
+			tx_vdev_id = injection_ctx->adapter->sessionId;
 			mon_adapter_vdev_id = 0xff;
 			mon_adapter_open = false;
 			monitor_mode_active = injection_ctx->is_monitor_mode;
@@ -638,34 +626,25 @@ void hdd_process_injection_queue_work(void *arg)
 			 */
 			if (monitor_mode_active) {
 				struct hdd_context *hdd_ctx;
-				struct hdd_adapter *mon_adapter;
+				hdd_adapter_t *mon_adapter;
 
 				hdd_ctx = WLAN_HDD_GET_CTX(injection_ctx->adapter);
 				mon_adapter = hdd_ctx ?
 					hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE) :
 					NULL;
 				if (mon_adapter) {
-					mon_adapter_vdev_id = mon_adapter->vdev_id;
-					mon_adapter_open =
-						test_bit(DEVICE_IFACE_OPENED,
-							 &mon_adapter->event_flags);
-				}
+                                        mon_adapter_vdev_id = mon_adapter->sessionId;
+                                        mon_adapter_open =
+                                                test_bit(DEVICE_IFACE_OPENED,
+                                                         &mon_adapter->event_flags);
+                                }
 
-				soc = cds_get_context(QDF_MODULE_ID_SOC);
-				if (soc)
-					cdp_mon_vdev_id =
-						cdp_get_mon_vdev_from_pdev(soc,
-								     OL_TXRX_PDEV_ID);
-
-				if (mon_adapter_open &&
-				    mon_adapter_vdev_id != 0xff &&
-				    mon_adapter_vdev_id != (uint8_t)-EINVAL) {
-					tx_vdev_id = mon_adapter_vdev_id;
-				} else if (cdp_mon_vdev_id != 0xff &&
-					   cdp_mon_vdev_id != (uint8_t)-EINVAL) {
-					tx_vdev_id = cdp_mon_vdev_id;
-				}
-			}
+                                if (mon_adapter_open &&
+                                    mon_adapter_vdev_id != 0xff &&
+                                    mon_adapter_vdev_id != (uint8_t)-EINVAL) {
+                                        tx_vdev_id = mon_adapter_vdev_id;
+                                }
+                        }
 
 			wma_status = wma_queue_injection_frame(
 				(tp_wma_handle)injection_ctx->wma_handle, req,
@@ -726,7 +705,7 @@ int hdd_frame_inject_netlink(struct wiphy *wiphy, struct wireless_dev *wdev,
 			     const void *data, int data_len)
 {
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
-	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
+	hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
 	struct nlattr *tb[HDD_FRAME_INJECT_ATTR_MAX + 1];
 	struct inject_frame_req *req = NULL;
 	uint8_t *frame_data = NULL;
@@ -757,7 +736,7 @@ int hdd_frame_inject_netlink(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 
 	/* Parse netlink attributes */
-	if (wlan_cfg80211_nla_parse(tb, HDD_FRAME_INJECT_ATTR_MAX, data, data_len, NULL)) {
+	if (hdd_nla_parse(tb, HDD_FRAME_INJECT_ATTR_MAX, data, data_len, NULL)) {
 		hdd_inject_err("Failed to parse netlink attributes");
 		return -EINVAL;
 	}
@@ -853,7 +832,7 @@ int hdd_get_injection_stats_netlink(struct wiphy *wiphy, struct wireless_dev *wd
 				    const void *data, int data_len)
 {
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
-	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
+	hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
 	struct injection_stats stats;
 	struct sk_buff *reply_skb;
 	QDF_STATUS status;
@@ -924,7 +903,7 @@ int hdd_reset_injection_stats_netlink(struct wiphy *wiphy, struct wireless_dev *
 				      const void *data, int data_len)
 {
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
-	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
+	hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
 	QDF_STATUS status;
 	int ret = 0;
 
@@ -971,7 +950,7 @@ int hdd_reset_injection_stats_netlink(struct wiphy *wiphy, struct wireless_dev *
  *
  * Return: QDF_STATUS_SUCCESS on successful recovery, error code on failure
  */
-QDF_STATUS hdd_recover_from_injection_error(struct hdd_adapter *adapter,
+QDF_STATUS hdd_recover_from_injection_error(hdd_adapter_t *adapter,
 					     enum hdd_injection_error_type error_type,
 					     int32_t error_code,
 					     struct inject_frame_req *frame_req)
@@ -1130,7 +1109,7 @@ QDF_STATUS hdd_recover_from_injection_error(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_reset_injection_state(struct hdd_adapter *adapter)
+QDF_STATUS hdd_reset_injection_state(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 	struct hdd_injection_recovery_ctx *recovery_ctx;
@@ -1264,7 +1243,7 @@ int hdd_translate_injection_error(QDF_STATUS qdf_status, int32_t layer_error)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_handle_injection_degradation(struct hdd_adapter *adapter,
+QDF_STATUS hdd_handle_injection_degradation(hdd_adapter_t *adapter,
 					     uint32_t resource_type)
 {
 	struct hdd_injection_ctx *injection_ctx;
@@ -1361,7 +1340,7 @@ QDF_STATUS hdd_handle_injection_degradation(struct hdd_adapter *adapter,
  */
 void hdd_injection_recovery_work(void *arg)
 {
-	struct hdd_adapter *adapter = (struct hdd_adapter *)arg;
+	hdd_adapter_t *adapter = (hdd_adapter_t *)arg;
 	struct hdd_injection_ctx *injection_ctx;
 	struct hdd_injection_recovery_ctx *recovery_ctx;
 	QDF_STATUS status;
@@ -1428,7 +1407,7 @@ void hdd_injection_recovery_work(void *arg)
  */
 void hdd_injection_recovery_timer(void *arg)
 {
-	struct hdd_adapter *adapter = (struct hdd_adapter *)arg;
+	hdd_adapter_t *adapter = (hdd_adapter_t *)arg;
 	struct hdd_injection_ctx *injection_ctx;
 	struct hdd_injection_recovery_ctx *recovery_ctx;
 
@@ -1473,7 +1452,7 @@ void hdd_injection_recovery_timer(void *arg)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_get_injection_stats(struct hdd_adapter *adapter,
+QDF_STATUS hdd_get_injection_stats(hdd_adapter_t *adapter,
 				   struct injection_stats *stats)
 {
 	struct hdd_injection_ctx *injection_ctx;
@@ -1530,7 +1509,7 @@ QDF_STATUS hdd_get_injection_stats(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_reset_injection_stats(struct hdd_adapter *adapter)
+QDF_STATUS hdd_reset_injection_stats(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 	QDF_STATUS status;
@@ -1578,7 +1557,7 @@ QDF_STATUS hdd_reset_injection_stats(struct hdd_adapter *adapter)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_update_injection_stats(struct hdd_adapter *adapter,
+QDF_STATUS hdd_update_injection_stats(hdd_adapter_t *adapter,
 				      uint32_t stat_type, uint64_t increment)
 {
 	struct hdd_injection_ctx *injection_ctx;
@@ -1647,7 +1626,7 @@ QDF_STATUS hdd_update_injection_stats(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_update_injection_latency(struct hdd_adapter *adapter,
+QDF_STATUS hdd_update_injection_latency(hdd_adapter_t *adapter,
 					uint64_t latency_us)
 {
 	struct hdd_injection_ctx *injection_ctx;
@@ -1696,7 +1675,7 @@ QDF_STATUS hdd_update_injection_latency(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_update_injection_throughput(struct hdd_adapter *adapter)
+QDF_STATUS hdd_update_injection_throughput(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 	struct injection_stats *stats;
@@ -1757,7 +1736,7 @@ QDF_STATUS hdd_update_injection_throughput(struct hdd_adapter *adapter)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_monitor_injection_resources(struct hdd_adapter *adapter)
+QDF_STATUS hdd_monitor_injection_resources(hdd_adapter_t *adapter)
 {
 	struct hdd_injection_ctx *injection_ctx;
 	struct injection_stats *stats;

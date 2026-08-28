@@ -4728,8 +4728,6 @@ hdd_adapter_t *hdd_open_adapter(hdd_context_t *hdd_ctx, uint8_t session_type,
 
 	cfgState = WLAN_HDD_GET_CFG_STATE_PTR(adapter);
 	mutex_init(&cfgState->remain_on_chan_ctx_lock);
-	for (i = 0; i < NET_DEV_HOLD_ID_MAX; i++)
-		qdf_atomic_init(&adapter->net_dev_hold_ref_count[i]);
 
 	if (QDF_STATUS_SUCCESS == status)
 		status = hdd_attach_adapter(hdd_ctx, adapter);
@@ -12810,7 +12808,7 @@ static ssize_t wlan_hdd_state_ctrl_param_write(struct file *filp,
 		monitor_active = true;
 
 	if (hdd_ctx) {
-		struct hdd_adapter *mon_adapter;
+		hdd_adapter_t *mon_adapter;
 
 		mon_adapter = hdd_get_adapter(hdd_ctx, QDF_MONITOR_MODE);
 		if (mon_adapter &&

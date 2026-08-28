@@ -30,7 +30,6 @@
 #include <linux/sched.h>
 
 /* Forward declarations */
-struct hdd_adapter;
 struct inject_frame_req;
 struct injection_stats;
 struct injection_security_ctx;
@@ -79,7 +78,7 @@ QDF_STATUS hdd_check_injection_capability(struct task_struct *task);
  *
  * Return: QDF_STATUS_SUCCESS if allowed, error code if rate limited
  */
-QDF_STATUS hdd_apply_injection_rate_limit(struct hdd_adapter *adapter);
+QDF_STATUS hdd_apply_injection_rate_limit(hdd_adapter_t *adapter);
 
 /**
  * hdd_log_injection_activity() - Log injection activity for audit
@@ -89,7 +88,7 @@ QDF_STATUS hdd_apply_injection_rate_limit(struct hdd_adapter *adapter);
  * This function logs frame injection activity for security
  * auditing and monitoring purposes.
  */
-void hdd_log_injection_activity(struct hdd_adapter *adapter,
+void hdd_log_injection_activity(hdd_adapter_t *adapter,
 				struct inject_frame_req *req);
 
 /**
@@ -103,7 +102,7 @@ void hdd_log_injection_activity(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS if authorized, error code otherwise
  */
-QDF_STATUS hdd_validate_injection_permissions(struct hdd_adapter *adapter,
+QDF_STATUS hdd_validate_injection_permissions(hdd_adapter_t *adapter,
 					      struct inject_frame_req *req);
 
 /**
@@ -116,7 +115,7 @@ QDF_STATUS hdd_validate_injection_permissions(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_get_injection_stats(struct hdd_adapter *adapter,
+QDF_STATUS hdd_get_injection_stats(hdd_adapter_t *adapter,
 				   struct injection_stats *stats);
 
 /**
@@ -127,7 +126,7 @@ QDF_STATUS hdd_get_injection_stats(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_reset_injection_stats(struct hdd_adapter *adapter);
+QDF_STATUS hdd_reset_injection_stats(hdd_adapter_t *adapter);
 
 #else /* FEATURE_FRAME_INJECTION_SUPPORT */
 
@@ -146,29 +145,29 @@ static inline QDF_STATUS hdd_check_injection_capability(struct task_struct *task
 	return QDF_STATUS_E_NOSUPPORT;
 }
 
-static inline QDF_STATUS hdd_apply_injection_rate_limit(struct hdd_adapter *adapter)
+static inline QDF_STATUS hdd_apply_injection_rate_limit(hdd_adapter_t *adapter)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
 
-static inline void hdd_log_injection_activity(struct hdd_adapter *adapter,
+static inline void hdd_log_injection_activity(hdd_adapter_t *adapter,
 					      struct inject_frame_req *req)
 {
 }
 
-static inline QDF_STATUS hdd_validate_injection_permissions(struct hdd_adapter *adapter,
+static inline QDF_STATUS hdd_validate_injection_permissions(hdd_adapter_t *adapter,
 							    struct inject_frame_req *req)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
 
-static inline QDF_STATUS hdd_get_injection_stats(struct hdd_adapter *adapter,
+static inline QDF_STATUS hdd_get_injection_stats(hdd_adapter_t *adapter,
 						  struct injection_stats *stats)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }
 
-static inline QDF_STATUS hdd_reset_injection_stats(struct hdd_adapter *adapter)
+static inline QDF_STATUS hdd_reset_injection_stats(hdd_adapter_t *adapter)
 {
 	return QDF_STATUS_E_NOSUPPORT;
 }

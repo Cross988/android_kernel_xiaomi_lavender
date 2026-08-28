@@ -75,13 +75,5 @@ void hdd_beacon_recv_pause_indication(hdd_handle_t hdd_handle,
 #else
 #define BCN_RECV_FEATURE_VENDOR_COMMANDS
 #define BCN_RECV_FEATURE_VENDOR_EVENTS
-
-static inline
-void hdd_beacon_recv_pause_indication(hdd_handle_t hdd_handle,
-				      uint8_t vdev_id,
-				      enum scan_event_type type,
-				      bool is_disconnected)
-{
-}
 #endif
 

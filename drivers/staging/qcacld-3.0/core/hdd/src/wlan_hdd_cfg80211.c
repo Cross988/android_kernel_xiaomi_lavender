@@ -5833,54 +5833,6 @@ static int hdd_config_scan_default_ies(hdd_adapter_t *adapter,
         }
         return 0;
 }
-				       const struct nlattr *attr)
-{
-	hdd_context_t *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	uint8_t *scan_ie;
-	uint16_t scan_ie_len;
-	QDF_STATUS status;
-
-	if (!attr)
-		return 0;
-
-	scan_ie_len = nla_len(attr);
-	hdd_debug("IE len %d session %d device mode %d",
-		  scan_ie_len, adapter->sessionId, adapter->device_mode);
-
-	if (!scan_ie_len) {
-		hdd_err("zero-length IE prohibited");
-		return -EINVAL;
-	}
-
-	if (scan_ie_len > MAX_DEFAULT_SCAN_IE_LEN) {
-		hdd_err("IE length %d exceeds max of %d",
-			scan_ie_len, MAX_DEFAULT_SCAN_IE_LEN);
-		return -EINVAL;
-	}
-
-	scan_ie = nla_data(attr);
-	if (!hdd_is_ie_valid(scan_ie, scan_ie_len)) {
-		hdd_err("Invalid default scan IEs");
-		return -EINVAL;
-	}
-
-	if (wlan_hdd_save_default_scan_ies(hdd_ctx, adapter,
-					   scan_ie, scan_ie_len))
-		hdd_err("Failed to save default scan IEs");
-
-	if (adapter->device_mode == QDF_STA_MODE) {
-		status = sme_set_default_scan_ie(hdd_ctx->hHal,
-						 adapter->sessionId, scan_ie,
-						 scan_ie_len);
-		if (QDF_STATUS_SUCCESS != status) {
-			hdd_err("failed to set default scan IEs in sme: %d",
-				status);
-			return -EPERM;
-		}
-	}
-
-	return 0;
-}
 
 /**
  * __wlan_hdd_cfg80211_wifi_configuration_set() - Wifi configuration
@@ -21498,57 +21450,52 @@ enum cds_con_mode wlan_hdd_convert_nl_iftype_to_hdd_type(
  * Return: 0 on success, -ENODATA if no channel is set.
  */
 static int wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
-					 struct wireless_dev *wdev,
-					 struct cfg80211_chan_def *chandef)
+                                         struct wireless_dev *wdev,
+                                         struct cfg80211_chan_def *chandef)
 {
-	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
-	struct hdd_station_ctx *sta_ctx;
-	struct hdd_mon_set_ch_info *ch_info;
-	struct ieee80211_channel *chan;
-	uint32_t freq;
-
-	if (!adapter)
-		return -ENODATA;
-
-	/* Primary source: adapter->mon_chan_freq (set by both boot-time
-	 * monitor mode and cfg80211 set_monitor_channel).
-	 */
-	freq = adapter->mon_chan_freq;
-
-	/* Fallback: station context ch_info (set by hdd_mon_select_cbmode
-	 * in the roam callback path).
-	 */
-	if (!freq) {
-		sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-		ch_info = &sta_ctx->ch_info;
-		freq = ch_info->freq;
-	}
-
-	if (!freq)
-		return -ENODATA;
-
-	chan = ieee80211_get_channel(wiphy, freq);
-	if (!chan)
-		return -ENODATA;
-
-	cfg80211_chandef_create(chandef, chan, NL80211_CHAN_NO_HT);
-
-	/* Upgrade width if we know the bandwidth */
-	switch (adapter->mon_bandwidth) {
-	case CH_WIDTH_40MHZ:
-		chandef->width = NL80211_CHAN_WIDTH_40;
-		break;
-	case CH_WIDTH_80MHZ:
-		chandef->width = NL80211_CHAN_WIDTH_80;
-		break;
-	case CH_WIDTH_160MHZ:
-		chandef->width = NL80211_CHAN_WIDTH_160;
-		break;
-	default:
-		break;
-	}
-
-	return 0;
+        hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
+        hdd_station_ctx_t *sta_ctx;
+        struct hdd_mon_set_ch_info *ch_info;
+        struct ieee80211_channel *chan;
+        uint8_t channel = 0;
+        uint32_t freq = 0;
+        if (!adapter)
+                return -ENODATA;
+        /* Primary source: adapter->mon_chan (set by both boot-time
+         * monitor mode and cfg80211 set_monitor_channel).
+         */
+        channel = adapter->mon_chan;
+        /* Fallback: station context ch_info (set by hdd_mon_select_cbmode
+         * in the roam callback path).
+         */
+        if (!channel) {
+                sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+                ch_info = &sta_ctx->ch_info;
+                channel = ch_info->channel;
+        }
+        if (!channel)
+                return -ENODATA;
+        if (0 != hdd_wlan_get_freq(channel, &freq))
+                return -ENODATA;
+        chan = ieee80211_get_channel(wiphy, freq);
+        if (!chan)
+                return -ENODATA;
+        cfg80211_chandef_create(chandef, chan, NL80211_CHAN_NO_HT);
+        /* Upgrade width if we know the bandwidth */
+        switch (adapter->mon_bandwidth) {
+        case CH_WIDTH_40MHZ:
+                chandef->width = NL80211_CHAN_WIDTH_40;
+                break;
+        case CH_WIDTH_80MHZ:
+                chandef->width = NL80211_CHAN_WIDTH_80;
+                break;
+        case CH_WIDTH_160MHZ:
+                chandef->width = NL80211_CHAN_WIDTH_160;
+                break;
+        default:
+                break;
+        }
+        return 0;
 }
 
 /**
@@ -21624,8 +21571,8 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
 		ret = qdf_status_to_os_return(status);
 		return ret;
 	}
-        adapter->mon_chan_freq = chandef->chan->center_freq;
-        adapter->mon_bandwidth = ch_width;
+        adapter->mon_chan = chan_num;
+        adapter->mon_bandwidth = ch_params.ch_width;
         EXIT();
 	return 0;
 }

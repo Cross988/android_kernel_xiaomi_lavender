@@ -2140,9 +2140,6 @@ void lim_process_action_frame_no_session(tpAniSirGlobal pMac, uint8_t *pBd)
 	uint8_t *pBody = WMA_GET_RX_MPDU_DATA(pBd);
 	tpSirMacActionFrameHdr action_hdr = (tpSirMacActionFrameHdr) pBody;
 	tpSirMacVendorSpecificPublicActionFrameHdr vendor_specific;
-	struct wlan_objmgr_vdev *vdev;
-	enum QDF_OPMODE mode;
-	uint8_t pdev_id;
 
 	pe_debug("Received a Action frame -- no session");
 

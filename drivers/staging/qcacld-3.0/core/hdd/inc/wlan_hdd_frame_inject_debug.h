@@ -29,7 +29,6 @@
 #include <qdf_status.h>
 
 /* Forward declarations */
-struct hdd_adapter;
 struct injection_config;
 
 #ifdef FEATURE_FRAME_INJECTION_SUPPORT
@@ -44,7 +43,7 @@ struct injection_config;
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_injection_create_debugfs_entries(struct hdd_adapter *adapter);
+QDF_STATUS hdd_injection_create_debugfs_entries(hdd_adapter_t *adapter);
 
 /**
  * hdd_injection_remove_debugfs_entries() - Remove debugfs entries for adapter
@@ -55,7 +54,7 @@ QDF_STATUS hdd_injection_create_debugfs_entries(struct hdd_adapter *adapter);
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_injection_remove_debugfs_entries(struct hdd_adapter *adapter);
+QDF_STATUS hdd_injection_remove_debugfs_entries(hdd_adapter_t *adapter);
 
 /**
  * hdd_injection_init_debug_interfaces() - Initialize debug interfaces
@@ -128,12 +127,12 @@ bool hdd_injection_is_globally_enabled(void);
 
 #else /* FEATURE_FRAME_INJECTION_SUPPORT */
 
-static inline QDF_STATUS hdd_injection_create_debugfs_entries(struct hdd_adapter *adapter)
+static inline QDF_STATUS hdd_injection_create_debugfs_entries(hdd_adapter_t *adapter)
 {
 	return QDF_STATUS_SUCCESS;
 }
 
-static inline QDF_STATUS hdd_injection_remove_debugfs_entries(struct hdd_adapter *adapter)
+static inline QDF_STATUS hdd_injection_remove_debugfs_entries(hdd_adapter_t *adapter)
 {
 	return QDF_STATUS_SUCCESS;
 }

@@ -807,22 +807,6 @@ void hdd_tx_rx_collect_connectivity_stats_info(struct sk_buff *skb,
 	}
 }
 
-/**
- * hdd_is_xmit_allowed_on_ndi() - Verify if xmit is allowed on NDI
- * @adapter: The adapter structure
- *
- * Return: True if xmit is allowed on NDI and false otherwise
- */
-static bool hdd_is_xmit_allowed_on_ndi(struct hdd_adapter *adapter)
-{
-	enum nan_datapath_state state;
-
-	state = ucfg_nan_get_ndi_state(adapter->vdev);
-	return (state == NAN_DATA_NDI_CREATED_STATE ||
-		state == NAN_DATA_CONNECTED_STATE ||
-		state == NAN_DATA_CONNECTING_STATE ||
-		state == NAN_DATA_PEER_CREATE_STATE);
-}
 
 /**
  * hdd_get_transmit_mac_addr() - Get the mac address to validate the xmit
@@ -833,10 +817,10 @@ static bool hdd_is_xmit_allowed_on_ndi(struct hdd_adapter *adapter)
  * Return: None
  */
 static
-void hdd_get_transmit_mac_addr(struct hdd_adapter *adapter, struct sk_buff *skb,
+void hdd_get_transmit_mac_addr(hdd_adapter_t *adapter, struct sk_buff *skb,
 			       struct qdf_mac_addr *mac_addr_tx_allowed)
 {
-	struct hdd_station_ctx *sta_ctx = &adapter->session.station;
+	struct hdd_station_ctx *sta_ctx = &adapter->sessionCtx.station;
 	bool is_mc_bc_addr = false;
 
 	if (QDF_NBUF_CB_GET_IS_BCAST(skb) || QDF_NBUF_CB_GET_IS_MCAST(skb))
@@ -845,23 +829,15 @@ void hdd_get_transmit_mac_addr(struct hdd_adapter *adapter, struct sk_buff *skb,
 	if (adapter->device_mode == QDF_IBSS_MODE) {
 		if (is_mc_bc_addr)
 			qdf_copy_macaddr(mac_addr_tx_allowed,
-					 &adapter->mac_addr);
+					 &adapter->macAddressCurrent);
 		else
 			qdf_copy_macaddr(mac_addr_tx_allowed,
 					 (struct qdf_mac_addr *)skb->data);
-	} else if (adapter->device_mode == QDF_NDI_MODE &&
-		   hdd_is_xmit_allowed_on_ndi(adapter)) {
-		if (is_mc_bc_addr)
-			qdf_copy_macaddr(mac_addr_tx_allowed,
-					 &adapter->mac_addr);
-		else
-			qdf_copy_macaddr(mac_addr_tx_allowed,
-					 (struct qdf_mac_addr *)skb->data);
-	} else {
-		if (sta_ctx->conn_info.conn_state ==
+        } else {
+		if (sta_ctx->conn_info.connState ==
 		    eConnectionState_Associated)
 			qdf_copy_macaddr(mac_addr_tx_allowed,
-					 &sta_ctx->conn_info.bssid);
+					 &sta_ctx->conn_info.bssId);
 	}
 }
 
@@ -873,7 +849,7 @@ void hdd_get_transmit_mac_addr(struct hdd_adapter *adapter, struct sk_buff *skb,
  *
  * Return: true if tx path should be treated as monitor injection
  */
-static bool hdd_is_monitor_tx_dev(struct hdd_adapter *adapter,
+static bool hdd_is_monitor_tx_dev(hdd_adapter_t *adapter,
 				  struct net_device *dev)
 {
 	if (!adapter || !dev)
@@ -900,7 +876,7 @@ static bool hdd_is_monitor_tx_dev(struct hdd_adapter *adapter,
  *
  * Return: None
  */
-static void hdd_monitor_mode_tx_inject(struct hdd_adapter *adapter,
+static void hdd_monitor_mode_tx_inject(hdd_adapter_t *adapter,
 				       struct net_device *dev,
 				       struct sk_buff *skb)
 {
@@ -1013,7 +989,6 @@ drop:
 }
 #endif
 
-#ifdef HANDLE_BROADCAST_EAPOL_TX_FRAME
 /**
  * wlan_hdd_fix_broadcast_eapol() - Fix broadcast eapol
  * @adapter: pointer to adapter
@@ -1092,9 +1067,9 @@ static netdev_tx_t __hdd_hard_start_xmit(struct sk_buff *skb,
 	bool is_arp = false;
 
 #ifdef FEATURE_FRAME_INJECTION_SUPPORT
-	if (hdd_is_monitor_tx_dev(adapter, dev)) {
-		hdd_monitor_mode_tx_inject(adapter, dev, skb);
-		return;
+	if (hdd_is_monitor_tx_dev(pAdapter, dev)) {
+		hdd_monitor_mode_tx_inject(pAdapter, dev, skb);
+		return NETDEV_TX_OK;
 	}
 #endif
 
@@ -2573,13 +2548,6 @@ int hdd_set_mon_rx_cb(struct net_device *dev)
 		hdd_err("sme_create_mon_session() failed to register. Status= %d [0x%08X]",
 			qdf_status, qdf_status);
 		goto exit;
-	}
-
-	/* peer is created wma_vdev_attach->wma_create_peer */
-	qdf_status = cdp_peer_register(soc, OL_TXRX_PDEV_ID, &sta_desc);
-	if (QDF_STATUS_SUCCESS != qdf_status) {
-		hdd_err("cdp_peer_register() failed to register. Status= %d [0x%08X]",
-			qdf_status, qdf_status);
 	}
 exit:
 	ret = qdf_status_to_os_return(qdf_status);

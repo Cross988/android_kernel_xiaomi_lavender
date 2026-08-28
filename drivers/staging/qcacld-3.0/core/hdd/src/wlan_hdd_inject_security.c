@@ -36,13 +36,13 @@
 
 /* Logging macros for injection security */
 #define hdd_security_debug(params...) \
-	QDF_TRACE_DEBUG(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_DEBUG, params)
 #define hdd_security_info(params...) \
-	QDF_TRACE_INFO(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_INFO, params)
 #define hdd_security_warn(params...) \
-	QDF_TRACE_WARN(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_WARN, params)
 #define hdd_security_err(params...) \
-	QDF_TRACE_ERROR(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR, params)
 
 /* Default security configuration values */
 #define HDD_INJECT_DEFAULT_ENABLED           true
@@ -296,7 +296,7 @@ static struct injection_session *hdd_find_injection_session(
  *
  * Return: QDF_STATUS_SUCCESS if allowed, error code if rate limited
  */
-QDF_STATUS hdd_apply_injection_rate_limit(struct hdd_adapter *adapter)
+QDF_STATUS hdd_apply_injection_rate_limit(hdd_adapter_t *adapter)
 {
 	struct injection_security_ctx *security_ctx;
 	uint64_t current_time, time_diff;
@@ -349,7 +349,7 @@ QDF_STATUS hdd_apply_injection_rate_limit(struct hdd_adapter *adapter)
  * This function logs frame injection activity for security
  * auditing and monitoring purposes.
  */
-void hdd_log_injection_activity(struct hdd_adapter *adapter,
+void hdd_log_injection_activity(hdd_adapter_t *adapter,
 				struct inject_frame_req *req)
 {
 	struct injection_security_ctx *security_ctx;
@@ -405,7 +405,7 @@ void hdd_log_injection_activity(struct hdd_adapter *adapter,
  *
  * Return: QDF_STATUS_SUCCESS if authorized, error code otherwise
  */
-QDF_STATUS hdd_validate_injection_permissions(struct hdd_adapter *adapter,
+QDF_STATUS hdd_validate_injection_permissions(hdd_adapter_t *adapter,
 					      struct inject_frame_req *req)
 {
 	struct injection_security_ctx *security_ctx;

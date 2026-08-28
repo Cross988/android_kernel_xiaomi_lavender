@@ -13542,30 +13542,34 @@ static const struct iw_priv_args we_private_args[] = {
  * Return: 0 on success, negative errno on failure.
  */
 static int hdd_wext_giwfreq(struct net_device *dev,
-			    struct iw_request_info *info,
-			    struct iw_freq *freq, char *extra)
+                            struct iw_request_info *info,
+                            struct iw_freq *freq, char *extra)
 {
-	struct hdd_adapter *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
-	struct hdd_station_ctx *sta_ctx;
-	uint32_t chan_freq;
+        hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+        hdd_station_ctx_t *sta_ctx;
+        uint8_t channel = 0;
+        uint32_t chan_freq = 0;
 
-	if (!adapter)
-		return -EINVAL;
+        if (!adapter)
+                return -EINVAL;
 
-	chan_freq = adapter->mon_chan_freq;
+        channel = adapter->mon_chan;
 
-	if (!chan_freq) {
-		sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
-		if (sta_ctx)
-			chan_freq = sta_ctx->ch_info.freq;
-	}
+        if (!channel) {
+                sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+                if (sta_ctx)
+                        channel = sta_ctx->ch_info.channel;
+        }
 
-	if (!chan_freq)
-		return -EINVAL;
+        if (!channel)
+                return -EINVAL;
 
-	freq->m = chan_freq;
-	freq->e = 6;
-	return 0;
+        if (0 != hdd_wlan_get_freq(channel, &chan_freq))
+                return -EINVAL;
+
+        freq->m = chan_freq;
+        freq->e = 6;
+        return 0;
 }
 
 /*

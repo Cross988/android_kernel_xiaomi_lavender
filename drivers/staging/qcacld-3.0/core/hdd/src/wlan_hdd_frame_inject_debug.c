@@ -73,7 +73,7 @@ static ssize_t hdd_injection_debugfs_stats_show(struct file *file,
 						 size_t count,
 						 loff_t *ppos)
 {
-	struct hdd_adapter *adapter = file->private_data;
+	hdd_adapter_t *adapter = file->private_data;
 	struct hdd_injection_ctx *injection_ctx;
 	struct injection_stats *stats;
 	char *debug_buf;
@@ -164,7 +164,7 @@ static ssize_t hdd_injection_debugfs_config_show(struct file *file,
 						  size_t count,
 						  loff_t *ppos)
 {
-	struct hdd_adapter *adapter = file->private_data;
+	hdd_adapter_t *adapter = file->private_data;
 	struct hdd_injection_ctx *injection_ctx;
 	struct injection_config *config;
 	char *debug_buf;
@@ -229,7 +229,7 @@ static ssize_t hdd_injection_debugfs_reset_write(struct file *file,
 						  size_t count,
 						  loff_t *ppos)
 {
-	struct hdd_adapter *adapter = file->private_data;
+	hdd_adapter_t *adapter = file->private_data;
 	QDF_STATUS status;
 
 	if (!adapter || !adapter->injection_ctx) {
@@ -542,7 +542,7 @@ static struct attribute_group hdd_injection_sysfs_attr_group = {
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_injection_create_debugfs_entries(struct hdd_adapter *adapter)
+QDF_STATUS hdd_injection_create_debugfs_entries(hdd_adapter_t *adapter)
 {
 	struct dentry *adapter_dir;
 	char dir_name[32];
@@ -588,7 +588,7 @@ QDF_STATUS hdd_injection_create_debugfs_entries(struct hdd_adapter *adapter)
  *
  * Return: QDF_STATUS_SUCCESS on success, error code on failure
  */
-QDF_STATUS hdd_injection_remove_debugfs_entries(struct hdd_adapter *adapter)
+QDF_STATUS hdd_injection_remove_debugfs_entries(hdd_adapter_t *adapter)
 {
 	if (!adapter) {
 		return QDF_STATUS_E_INVAL;

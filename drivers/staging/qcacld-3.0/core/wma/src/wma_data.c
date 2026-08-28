@@ -1489,8 +1489,14 @@ wma_mgmt_tx_dload_comp_hldr(void *wma_context, qdf_nbuf_t netbuf,
 
 	WMA_LOGD("Tx Complete Status %d", status);
 
-	if (WMA_IS_INJECTION_DESC_ID(QDF_NBUF_CB_MGMT_TXRX_DESC_ID(netbuf)))
-		return;
+        /* TODO(injection): upstream patch skips forwarding download-complete
+         * events for injected frames here via
+         * WMA_IS_INJECTION_DESC_ID(QDF_NBUF_CB_MGMT_TXRX_DESC_ID(netbuf)),
+         * but QDF_NBUF_CB_MGMT_TXRX_DESC_ID does not exist in this tree.
+         * Needs a proper nbuf->desc_id accessor if injected frames are
+         * observed reaching the normal umac tx-complete callback.
+         */
+
 
 	if (!wma_handle->tx_frm_download_comp_cb) {
 		WMA_LOGE("Tx Complete Cb not registered by umac");

@@ -33,13 +33,13 @@
 
 /* Logging macros for frame validation */
 #define hdd_validate_debug(params...) \
-	QDF_TRACE_DEBUG(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_DEBUG, params)
 #define hdd_validate_info(params...) \
-	QDF_TRACE_INFO(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_INFO, params)
 #define hdd_validate_warn(params...) \
-	QDF_TRACE_WARN(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_WARN, params)
 #define hdd_validate_err(params...) \
-	QDF_TRACE_ERROR(QDF_MODULE_ID_HDD, params)
+	QDF_TRACE(QDF_MODULE_ID_HDD, QDF_TRACE_LEVEL_ERROR, params)
 
 /* Minimum frame sizes for different frame types */
 #define HDD_MIN_MGMT_FRAME_SIZE    24  /* Basic management frame header */
