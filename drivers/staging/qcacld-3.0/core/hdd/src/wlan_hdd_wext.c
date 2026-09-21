@@ -4424,11 +4424,14 @@ static int __iw_get_freq(struct net_device *dev, struct iw_request_info *info,
 			fwrq->m = freq;
 			fwrq->e = MHZ;
 		}
+	} else if (pAdapter->device_mode == QDF_MONITOR_MODE &&
+			   pAdapter->mon_chan) {
+		uint32_t mon_freq = 0;
+		if (0 == hdd_wlan_get_freq(pAdapter->mon_chan, &mon_freq)) {
+			fwrq->m = mon_freq;
+			fwrq->e = MHZ;
+		}
 	} else {
-		/* Set Exponent parameter as 6 (MHZ) in struct iw_freq
-		 * iwlist & iwconfig command shows frequency into proper
-		 * format (2.412 GHz instead of 246.2 MHz)
-		 */
 		fwrq->m = 0;
 		fwrq->e = MHZ;
 	}
