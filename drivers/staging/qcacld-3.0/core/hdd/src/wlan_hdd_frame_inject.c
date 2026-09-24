@@ -1388,9 +1388,10 @@ void hdd_injection_recovery_work(void *arg)
 	recovery_ctx->recovery_in_progress = false;
 	
 	if (recovery_ctx->consecutive_errors > 10) {
-		hdd_inject_warn("Too many consecutive errors (%u), disabling injection",
+		hdd_inject_warn("Too many consecutive errors (%u), resetting counter",
 				recovery_ctx->consecutive_errors);
-		injection_ctx->security_ctx.config.injection_enabled = false;
+		recovery_ctx->consecutive_errors = 0;
+		recovery_ctx->recovery_attempts = 0;
 	} else {
 		recovery_ctx->consecutive_errors = 0;
 	}
@@ -1431,11 +1432,12 @@ void hdd_injection_recovery_timer(void *arg)
 		/* Force reset injection state */
 		hdd_reset_injection_state(adapter);
 
-		/* Disable injection if too many timeouts */
+		/* Reset counters if too many timeouts instead of disabling injection */
 		if (recovery_ctx->recovery_attempts > 5) {
-			hdd_inject_err("Too many recovery attempts (%u), disabling injection",
+			hdd_inject_warn("Too many recovery attempts (%u), resetting counters",
 				       recovery_ctx->recovery_attempts);
-			injection_ctx->security_ctx.config.injection_enabled = false;
+			recovery_ctx->recovery_attempts = 0;
+			recovery_ctx->consecutive_errors = 0;
 		}
 	}
 
