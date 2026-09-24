@@ -1512,15 +1512,31 @@ QDF_STATUS wma_send_injection_frame_to_fw(tp_wma_handle wma_handle,
 	mgmt_params.pdata = frame_data; /* Management frame bytes for command payload */
 	mgmt_params.macaddr = NULL; /* No specific MAC address */
 	mgmt_params.qdf_ctx = qdf_ctx;
-	mgmt_params.tx_params_valid = false; /* Use default TX parameters */
-	wma_injection_debug_cache_update(mgmt_params.desc_id, req, fc_type,
-					 fc_subtype, mgmt_params.chanfreq);
-
-	/* Set transmission rate if specified in injection request */
+	/*
+	 * Force a safe fixed TX rate to prevent the firmware rate control
+	 * engine (ratectrl_11ac) from asserting on the hidden STA helper vdev
+	 * which has no associated BSS/peer context.
+	 *
+	 * Use 6 Mbps OFDM (mcs_mask bit 0 = 6 Mbps legacy, preamble_type 0x4
+	 * = OFDM) with 1 spatial stream. This matches what the upstream patch
+	 * does via use_6mbps/tx_type and bypasses ratectrl_11ac entirely.
+	 *
+	 * If the caller explicitly requested a specific rate, honour it but
+	 * still force OFDM preamble and 1 NSS to keep the firmware stable.
+	 */
+	qdf_mem_zero(&mgmt_params.tx_param, sizeof(mgmt_params.tx_param));
 	if (req->tx_rate != 0) {
 		mgmt_params.tx_param.mcs_mask = req->tx_rate;
-		mgmt_params.tx_params_valid = true;
+	} else {
+		/* 6 Mbps OFDM: bit 0 of mcs_mask selects 6 Mbps legacy rate */
+		mgmt_params.tx_param.mcs_mask = 0x001;
 	}
+	mgmt_params.tx_param.nss_mask = 0x1;
+	mgmt_params.tx_param.preamble_type = 0x4;
+	mgmt_params.tx_param.frame_type = 0;
+	mgmt_params.tx_params_valid = true;
+	wma_injection_debug_cache_update(mgmt_params.desc_id, req, fc_type,
+					 fc_subtype, mgmt_params.chanfreq);
 
 	if (!inject_tx_cfg_logged) {
 		WMA_LOGI("Injection TX config: vdev=%u iface_type=%u iface_subtype=%u vdev_active=%u chanfreq=%u",
