@@ -2017,10 +2017,20 @@ static int __hdd_mon_open(struct net_device *dev)
 
 	hdd_mon_mode_ether_setup(dev);
 
+	/*
+	 * Force device_mode to QDF_MONITOR_MODE so hdd_get_adapter()
+	 * can find this adapter for injection TX vdev setup.
+	 */
+	adapter->device_mode = QDF_MONITOR_MODE;
+
 	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE)
 		ret = hdd_set_mon_rx_cb(dev);
 	else
 		ret = hdd_set_mon_mode_cb(dev);
+
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_START_ALL_NETIF_QUEUE_N_CARRIER,
+				     WLAN_CONTROL_PATH);
 
 	set_bit(DEVICE_IFACE_OPENED, &adapter->event_flags);
 	return ret;
