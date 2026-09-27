@@ -2023,6 +2023,16 @@ static int __hdd_mon_open(struct net_device *dev)
 	 */
 	adapter->device_mode = QDF_MONITOR_MODE;
 
+	/* Prevent suspend while monitor mode is active to avoid
+	 * wlan_wow firmware crashes that kill injection.
+	 */
+	{
+		hdd_context_t *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+		if (hdd_ctx)
+			qdf_wake_lock_acquire(&hdd_ctx->monitor_mode_wakelock,
+					      WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
+	}
+
 	if (cds_get_conparam() == QDF_GLOBAL_MONITOR_MODE)
 		ret = hdd_set_mon_rx_cb(dev);
 	else
@@ -2801,8 +2811,13 @@ static int __hdd_stop(struct net_device *dev)
 		hdd_lpass_notify_stop(hdd_ctx);
 	}
 
-	if (wlan_hdd_is_session_type_monitor(adapter->device_mode))
+	if (wlan_hdd_is_session_type_monitor(adapter->device_mode)) {
 		hdd_reset_mon_mode_cb();
+		/* Release suspend wakelock when monitor mode stops */
+		qdf_wake_lock_release(&hdd_ctx->monitor_mode_wakelock,
+				      WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
+		adapter->device_mode = QDF_STA_MODE;
+	}
 
 	/*
 	 * NAN data interface is different in some sense. The traffic on NDI is
