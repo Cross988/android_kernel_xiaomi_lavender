@@ -54,3 +54,4 @@
 #endif
 
 #define NR_syscalls (__NR_syscalls)
+#define __ARCH_WANT_SYS_STATX

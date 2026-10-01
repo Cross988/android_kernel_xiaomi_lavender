@@ -30,8 +30,13 @@ struct kstat {
 	struct timespec  atime;
 	struct timespec	mtime;
 	struct timespec	ctime;
+	struct timespec	btime;
 	unsigned long	blksize;
 	unsigned long long	blocks;
+	u32		result_mask;
+	u64		attributes;
+	u64		attributes_mask;
+	u64		mnt_id;
 };
 
 #endif
