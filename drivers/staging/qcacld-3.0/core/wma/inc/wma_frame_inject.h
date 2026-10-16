@@ -152,6 +152,7 @@ QDF_STATUS wma_deinit_injection_queue(tp_wma_handle wma_handle);
  * caused by orphaned STA helper vdev during monitor teardown.
  */
 void wma_injection_pre_stop_cleanup(tp_wma_handle wma_handle);
+void wma_injection_clear_tx_vdev_state(void);
 
 /**
  * wma_queue_injection_frame() - Queue frame for injection

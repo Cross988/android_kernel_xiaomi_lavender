@@ -197,7 +197,7 @@ struct wma_injection_tx_vdev {
 	uint8_t vdev_id;
 	uint8_t monitor_vdev_id;
 	uint32_t chanfreq;
-	uint8_t mac_addr[QDF_MAC_ADDR_SIZE];
+        uint8_t mac_addr[QDF_MAC_ADDR_SIZE];
 };
 
 static struct wma_injection_tx_vdev g_inj_tx_vdev;
@@ -240,6 +240,18 @@ static void wma_injection_reset_session_state(void)
 	 *   - slot reuse in wma_injection_debug_cache_update()
 	 *   - wma_deinit_injection_queue() at driver shutdown
 	 */
+}
+
+/**
+ * wma_injection_clear_tx_vdev_state() - Clear stale injection TX vdev state
+ *
+ * Called on SSR/firmware-restart so that the next injection recreates
+ * the hidden STA vdev rather than reusing a stale firmware vdev_id.
+ */
+void wma_injection_clear_tx_vdev_state(void)
+{
+	qdf_mem_zero(&g_inj_tx_vdev, sizeof(g_inj_tx_vdev));
+	WMA_LOGI("Injection TX vdev state cleared (SSR/reset)");
 }
 
 /**
@@ -382,18 +394,23 @@ wma_injection_ensure_tx_vdev(tp_wma_handle wma,
         }
         msleep(100);
 
-        /*
-         * Skip VDEV_UP.  For STA vdevs, firmware's wlan_vdev_up
-         * asserts unless a BSS peer (the AP) exists — we only have
-         * a self-peer.  The mgmt TX handler only needs the vdev in
-         * STARTED state with a valid peer at vdev+0xc.
-         */
+	/*
+	 * Skip VDEV_UP.  For STA vdevs, firmware's wlan_vdev_up
+	 * asserts unless a BSS peer (the AP) exists - we only have
+	 * a self-peer.  The mgmt TX handler only needs the vdev in
+	 * STARTED state with a valid peer at vdev+0xc.
+	 * A STA vdev in VDEV_UP state without a real association will
+	 * trigger firmware's connection watchdog (~60s) causing
+	 * wal_concurrenc assert.
+	 */
 
         g_inj_tx_vdev.created          = true;
         g_inj_tx_vdev.vdev_id          = vid;
         g_inj_tx_vdev.monitor_vdev_id  = mon_vdev_id;
         g_inj_tx_vdev.chanfreq         = chanfreq;
         qdf_mem_copy(g_inj_tx_vdev.mac_addr, inj_mac, QDF_MAC_ADDR_SIZE);
+        /* Mark slot active so it isn't reused by subsequent vdev creates */
+        wma->interfaces[vid].vdev_active = true;
 
         WMA_LOGI("Injection TX helper vdev created: vdev_id=%u mac=%pM freq=%u type=STA",
                  vid, inj_mac, chanfreq);
@@ -415,6 +432,25 @@ static void wma_injection_destroy_tx_vdev(tp_wma_handle wma)
 	if (!g_inj_tx_vdev.created || !wma || !wma->wmi_handle)
 		return;
 
+	/* Drain in-flight frames before tearing down the vdev.
+	 * Firmware crashes (ratectrl_11ac assert) if PEER_DELETE
+	 * arrives while DMA-mapped nbufs are still in the TX pipeline.
+	 * The reaper frees stale nbufs after ~2 s; wait a bit longer.
+	 */
+	{
+		int _drain = 0;
+		while (qdf_atomic_read(&g_wma_injection_ctx.inflight_count) > 0
+		       && _drain < 25) {
+			msleep(100);
+			_drain++;
+		}
+		if (_drain)
+			WMA_LOGI("Injection drain: waited %d00 ms, inflight=%d",
+				 _drain,
+				 qdf_atomic_read(
+					 &g_wma_injection_ctx.inflight_count));
+	}
+
 	/*
 	 * Proper teardown order (reverse of create):
 	 *   PEER_DELETE → VDEV_STOP → VDEV_DELETE
@@ -424,7 +460,7 @@ static void wma_injection_destroy_tx_vdev(tp_wma_handle wma)
 	 * pending DELETE and firmware asserts.
 	 */
 
-	/* 1. PEER_DELETE */
+	/* 1. PEER_DELETE (self-peer) */
 	wmi_unified_peer_delete_send(wma->wmi_handle,
 				     g_inj_tx_vdev.mac_addr,
 				     g_inj_tx_vdev.vdev_id);
@@ -442,6 +478,7 @@ static void wma_injection_destroy_tx_vdev(tp_wma_handle wma)
 
 	WMA_LOGI("Injection TX helper vdev destroyed: vdev_id=%u",
 		 g_inj_tx_vdev.vdev_id);
+	wma->interfaces[g_inj_tx_vdev.vdev_id].vdev_active = false;
 	qdf_mem_zero(&g_inj_tx_vdev, sizeof(g_inj_tx_vdev));
 }
 
@@ -479,6 +516,25 @@ void wma_injection_pre_stop_cleanup(tp_wma_handle wma_handle)
 	WMA_LOGI("Pre-stop cleanup: destroying injection helper vdev_id=%u",
 		 g_inj_tx_vdev.vdev_id);
 
+	/* Drain in-flight frames before tearing down the vdev.
+	 * Firmware crashes (ratectrl_11ac assert) if PEER_DELETE
+	 * arrives while DMA-mapped nbufs are still in the TX pipeline.
+	 * The reaper frees stale nbufs after ~2 s; wait a bit longer.
+	 */
+	{
+		int _drain = 0;
+		while (qdf_atomic_read(&g_wma_injection_ctx.inflight_count) > 0
+		       && _drain < 25) {
+			msleep(100);
+			_drain++;
+		}
+		if (_drain)
+			WMA_LOGI("Injection drain: waited %d00 ms, inflight=%d",
+				 _drain,
+				 qdf_atomic_read(
+					 &g_wma_injection_ctx.inflight_count));
+	}
+
 	/* 1. PEER_DELETE */
 	wmi_unified_peer_delete_send(wma_handle->wmi_handle,
 				     g_inj_tx_vdev.mac_addr,
@@ -497,6 +553,7 @@ void wma_injection_pre_stop_cleanup(tp_wma_handle wma_handle)
 
 	WMA_LOGI("Pre-stop cleanup: injection helper vdev destroyed: vdev_id=%u",
 		 g_inj_tx_vdev.vdev_id);
+	wma_handle->interfaces[g_inj_tx_vdev.vdev_id].vdev_active = false;
 	qdf_mem_zero(&g_inj_tx_vdev, sizeof(g_inj_tx_vdev));
 }
 
@@ -1528,11 +1585,19 @@ QDF_STATUS wma_send_injection_frame_to_fw(tp_wma_handle wma_handle,
 	if (req->tx_rate != 0) {
 		mgmt_params.tx_param.mcs_mask = req->tx_rate;
 	} else {
-		/* 6 Mbps OFDM: bit 0 of mcs_mask selects 6 Mbps legacy rate */
-		mgmt_params.tx_param.mcs_mask = 0x001;
+		/* 6 Mbps OFDM: bit 4 of mcs_mask = OFDM BPSK 1/2 coding
+		 * (see wmi_unified_param.h tx_send_params mcs_mask comments:
+		 *  bits 0-3 = CCK, bit 4 = OFDM 6Mbps BPSK 1/2)
+		 */
+		mgmt_params.tx_param.mcs_mask = 0x010;
 	}
 	mgmt_params.tx_param.nss_mask = 0x1;
-	mgmt_params.tx_param.preamble_type = 0x4;
+	/* preamble_type = 0 = WMI_RATE_PREAMBLE_OFDM
+	 * (fw-api/fw/wmi_unified.h: 0=OFDM,1=CCK,2=HT,3=VHT,4=HE)
+	 * Previous value 0x4 = HE (802.11ax), unsupported, caused
+	 * ratectrl_11ac assert.
+	 */
+	mgmt_params.tx_param.preamble_type = 0;
 	mgmt_params.tx_param.frame_type = 0;
 	mgmt_params.tx_params_valid = true;
 	wma_injection_debug_cache_update(mgmt_params.desc_id, req, fc_type,

@@ -6306,6 +6306,17 @@ static bool wma_is_wow_applicable(tp_wma_handle wma)
 {
 	int vdev_id;
 
+	/* Do not enable WoW if any vdev is in monitor mode.
+	 * wlan_wow_enhan crashes the firmware when monitor mode
+	 * injection vdev is active.
+	 */
+	for (vdev_id = 0; vdev_id < wma->max_bssid; vdev_id++) {
+		if (wma->interfaces[vdev_id].type == WMI_VDEV_TYPE_MONITOR) {
+			WMA_LOGD("Monitor vdev active, skipping WoW");
+			return false;
+		}
+	}
+
 	if (wma_support_wow_for_beaconing(wma)) {
 		WMA_LOGD("vdev is in beaconning mode, enabling wow");
 		return true;

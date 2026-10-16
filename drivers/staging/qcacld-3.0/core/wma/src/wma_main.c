@@ -3906,6 +3906,11 @@ QDF_STATUS wma_stop(void *cds_ctx, uint8_t reason)
 	}
 #endif /* QCA_WIFI_FTM */
 
+	/* Clear injection TX vdev state on SSR so stale firmware
+	 * vdev_id is not reused after firmware restarts.
+	 */
+	wma_injection_clear_tx_vdev_state();
+
 	if (wma_handle->data_ack_work_ctx) {
 		cds_flush_work(&wma_handle->data_ack_work_ctx->ack_cmp_work);
 		qdf_mem_free(wma_handle->data_ack_work_ctx);

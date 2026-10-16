@@ -12097,11 +12097,10 @@ int wlan_hdd_set_mon_chan(hdd_adapter_t *adapter, uint32_t chan,
 	tCsrRoamProfile roam_profile;
 	struct ch_params_s ch_params;
 
-	if (QDF_GLOBAL_MONITOR_MODE != hdd_get_conparam()) {
-		hdd_err("Not supported, device is not in monitor mode");
-		return -EINVAL;
-	}
-
+	/* Allow channel set in both global monitor and mixed monitor mode
+	 * (NetHunter uses mixed mode where conparam is MISSION_MODE but
+	 * the adapter device_mode is QDF_MONITOR_MODE).
+	 */
 	hdd_debug("Set monitor mode Channel %d", chan);
 	qdf_mem_zero(&roam_profile, sizeof(roam_profile));
 	roam_profile.ChannelInfo.ChannelList = &ch_info->channel;
@@ -12119,12 +12118,26 @@ int wlan_hdd_set_mon_chan(hdd_adapter_t *adapter, uint32_t chan,
 		hdd_err("Invalid capture channel or bandwidth for a country");
 		return -EINVAL;
 	}
+	/* Stop TX queue to prevent injection frames from racing with the
+	 * firmware channel change. sme_roam_channel_change_req returns
+	 * before firmware completes the change, so frames sent after the
+	 * command but before firmware finishes will assert wal_concurrenc.
+	 */
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_STOP_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
+	msleep(50);
+
 	status = sme_roam_channel_change_req(hal_hdl, bssid, &ch_params,
 					     &roam_profile);
 	if (status) {
 		hdd_err("Status: %d Failed to set sme_roam Channel for monitor mode",
 			status);
 	}
+
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_START_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
 
 	adapter->mon_chan = chan;
 	adapter->mon_bandwidth = bandwidth;

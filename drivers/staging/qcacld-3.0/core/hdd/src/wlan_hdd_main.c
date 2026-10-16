@@ -2767,18 +2767,20 @@ static int __hdd_stop(struct net_device *dev)
 	 * ifdown on wlan0 and tear monitor down unexpectedly, causing ENETDOWN
 	 * in injection/scanning tools. Ignore those requests.
 	 */
-	if (hdd_get_conparam() == QDF_GLOBAL_MONITOR_MODE &&
-	    !uid_eq(current_euid(), GLOBAL_ROOT_UID) &&
-	    (wlan_hdd_is_session_type_monitor(adapter->device_mode) ||
-	     dev->type == ARPHRD_IEEE80211_RADIOTAP)) {
-		hdd_warn_rl("Ignoring monitor ifdown from %s", current->comm);
-		return 0;
-	}
-
-	if (hdd_get_conparam() == QDF_GLOBAL_MONITOR_MODE &&
-	    (wlan_hdd_is_session_type_monitor(adapter->device_mode) ||
-	     dev->type == ARPHRD_IEEE80211_RADIOTAP)) {
-		hdd_warn_rl("monitor ifdown request accepted from %s", current->comm);
+	/* Block ifdown on monitor interface from non-root processes
+	 * AND from root Android daemons (netd, wificond) that tear
+	 * down monitor on suspend. Check adapter->device_mode directly
+	 * so this works in mixed-mode (NetHunter) not just global monitor.
+	 */
+	if (wlan_hdd_is_session_type_monitor(adapter->device_mode) ||
+	    dev->type == ARPHRD_IEEE80211_RADIOTAP) {
+		if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)) {
+			hdd_warn_rl("Ignoring monitor ifdown from non-root %s",
+				    current->comm);
+			return 0;
+		}
+		hdd_warn_rl("monitor ifdown accepted from root %s",
+			    current->comm);
 	}
 
 	/* Nothing to be done if the interface is not opened */
@@ -6987,16 +6989,20 @@ static void hdd_wlan_exit(hdd_context_t *hdd_ctx)
 
 	qdf_nbuf_deinit_replenish_timer();
 	hdd_bus_bandwidth_destroy(hdd_ctx);
-        if (QDF_GLOBAL_MONITOR_MODE ==  hdd_get_conparam()) {
-                hdd_info("Release wakelock for monitor mode!");
-                qdf_wake_lock_release(&hdd_ctx->monitor_mode_wakelock,
-                                WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
-                {
-                        tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
-                        if (wma)
-                                wma_injection_pre_stop_cleanup(wma);
-                }
+	/* Always destroy injection TX helper vdev on driver exit,
+	 * regardless of conparam mode.
+	 */
+	{
+		tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
+		if (wma)
+			wma_injection_pre_stop_cleanup(wma);
 	}
+	if (QDF_GLOBAL_MONITOR_MODE == hdd_get_conparam()) {
+		hdd_info("Release wakelock for monitor mode!");
+		qdf_wake_lock_release(&hdd_ctx->monitor_mode_wakelock,
+				WIFI_POWER_EVENT_WAKELOCK_MONITOR_MODE);
+	}
+
 
 	qdf_spinlock_destroy(&hdd_ctx->hdd_adapter_lock);
 	qdf_spinlock_destroy(&hdd_ctx->sta_update_info_lock);

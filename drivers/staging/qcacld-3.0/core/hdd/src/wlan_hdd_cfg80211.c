@@ -21563,18 +21563,24 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
 			sec_ch = chan_num - 4;
 	}
 	cds_set_channel_params(chan_num, sec_ch, &ch_params);
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_STOP_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
+	msleep(50);
 	status = sme_roam_channel_change_req(hal_hdl, bssid, &ch_params,
 						 &roam_profile);
 	if (status) {
 		hdd_err("Failed to set sme_RoamChannel for monitor mode status: %d",
 			status);
 		ret = qdf_status_to_os_return(status);
-		return ret;
 	}
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_START_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
         adapter->mon_chan = chan_num;
         adapter->mon_bandwidth = ch_params.ch_width;
         EXIT();
-	return 0;
+	return ret;
 }
 
 /**
