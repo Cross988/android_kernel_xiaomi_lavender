@@ -6145,12 +6145,18 @@ QDF_STATUS hdd_start_all_adapters(hdd_context_t *hdd_ctx)
 			if (wlan_hdd_is_session_type_monitor(
 						QDF_MONITOR_MODE)) {
 				hdd_set_mon_mode_cb(adapter->dev);
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+				hdd_init_frame_injection(adapter);
+#endif
 				break;
 			}
 			hdd_init_station_mode(adapter);
 			hdd_set_mon_rx_cb(adapter->dev);
 			wlan_hdd_set_mon_chan(adapter, adapter->mon_chan,
 					      adapter->mon_bandwidth);
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+			hdd_init_frame_injection(adapter);
+#endif
 			break;
 
 		default:
