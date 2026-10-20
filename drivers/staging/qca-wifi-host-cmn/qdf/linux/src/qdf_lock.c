@@ -257,6 +257,7 @@ qdf_export_symbol(qdf_wake_lock_name);
  */
 QDF_STATUS qdf_wake_lock_create(qdf_wake_lock_t *lock, const char *name)
 {
+	wakeup_source_init(lock, name);
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_wake_lock_create);
@@ -272,6 +273,7 @@ qdf_export_symbol(qdf_wake_lock_create);
  */
 QDF_STATUS qdf_wake_lock_acquire(qdf_wake_lock_t *lock, uint32_t reason)
 {
+	__pm_stay_awake(lock);
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_wake_lock_acquire);
@@ -287,6 +289,7 @@ qdf_export_symbol(qdf_wake_lock_acquire);
  */
 QDF_STATUS qdf_wake_lock_timeout_acquire(qdf_wake_lock_t *lock, uint32_t msec)
 {
+	__pm_wakeup_event(lock, msec);
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_wake_lock_timeout_acquire);
@@ -302,6 +305,7 @@ qdf_export_symbol(qdf_wake_lock_timeout_acquire);
  */
 QDF_STATUS qdf_wake_lock_release(qdf_wake_lock_t *lock, uint32_t reason)
 {
+	__pm_relax(lock);
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_wake_lock_release);
@@ -316,6 +320,7 @@ qdf_export_symbol(qdf_wake_lock_release);
  */
 QDF_STATUS qdf_wake_lock_destroy(qdf_wake_lock_t *lock)
 {
+	wakeup_source_trash(lock);
 	return QDF_STATUS_SUCCESS;
 }
 qdf_export_symbol(qdf_wake_lock_destroy);
