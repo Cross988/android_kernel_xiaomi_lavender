@@ -508,3 +508,113 @@ void inode_set_bytes(struct inode *inode, loff_t bytes)
 }
 
 EXPORT_SYMBOL(inode_set_bytes);
+
+#include "mount.h"
+#include <uapi/linux/stat.h>
+
+static int cp_statx(const struct kstat *stat, struct statx __user *buffer)
+{
+	struct statx tmp;
+
+	memset(&tmp, 0, sizeof(tmp));
+	tmp.stx_mask = stat->result_mask;
+	tmp.stx_blksize = stat->blksize;
+	tmp.stx_attributes = stat->attributes;
+	tmp.stx_nlink = stat->nlink;
+	tmp.stx_uid = from_kuid_munged(current_user_ns(), stat->uid);
+	tmp.stx_gid = from_kgid_munged(current_user_ns(), stat->gid);
+	tmp.stx_mode = stat->mode;
+	tmp.stx_ino = stat->ino;
+	tmp.stx_size = stat->size;
+	tmp.stx_blocks = stat->blocks;
+	tmp.stx_attributes_mask = stat->attributes_mask;
+	tmp.stx_atime.tv_sec = stat->atime.tv_sec;
+	tmp.stx_atime.tv_nsec = stat->atime.tv_nsec;
+	tmp.stx_btime.tv_sec = stat->btime.tv_sec;
+	tmp.stx_btime.tv_nsec = stat->btime.tv_nsec;
+	tmp.stx_ctime.tv_sec = stat->ctime.tv_sec;
+	tmp.stx_ctime.tv_nsec = stat->ctime.tv_nsec;
+	tmp.stx_mtime.tv_sec = stat->mtime.tv_sec;
+	tmp.stx_mtime.tv_nsec = stat->mtime.tv_nsec;
+	tmp.stx_rdev_major = MAJOR(stat->rdev);
+	tmp.stx_rdev_minor = MINOR(stat->rdev);
+	tmp.stx_dev_major = MAJOR(stat->dev);
+	tmp.stx_dev_minor = MINOR(stat->dev);
+	tmp.stx_mnt_id = stat->mnt_id;
+
+	return copy_to_user(buffer, &tmp, sizeof(tmp)) ? -EFAULT : 0;
+}
+
+int vfs_statx(int dfd, const char __user *filename, int flags,
+		struct kstat *stat, u32 request_mask)
+{
+	struct path path;
+	int error;
+	unsigned lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
+
+	flags &= ~(AT_STATX_SYNC_TYPE | AT_STATX_FORCE_SYNC | AT_STATX_DONT_SYNC);
+	flags &= (AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT | AT_EMPTY_PATH);
+
+	if (flags & AT_SYMLINK_NOFOLLOW)
+		lookup_flags &= ~LOOKUP_FOLLOW;
+	if (flags & AT_NO_AUTOMOUNT)
+		lookup_flags &= ~LOOKUP_AUTOMOUNT;
+	if (flags & AT_EMPTY_PATH)
+		lookup_flags |= LOOKUP_EMPTY;
+
+retry:
+	error = user_path_at(dfd, filename, lookup_flags, &path);
+	if (error)
+		goto out;
+
+	error = vfs_getattr(&path, stat);
+	if (error)
+		goto out_path;
+
+	stat->result_mask = STATX_BASIC_STATS;
+	stat->attributes_mask = STATX_ATTR_AUTOMOUNT | STATX_ATTR_MOUNT_ROOT;
+
+	if (path.mnt) {
+		struct mount *mnt = real_mount(path.mnt);
+		if (mnt) {
+			stat->mnt_id = mnt->mnt_id;
+			stat->result_mask |= STATX_MNT_ID;
+			if (path.mnt->mnt_root == path.dentry) {
+				stat->attributes |= STATX_ATTR_MOUNT_ROOT;
+			}
+		}
+	}
+
+	if (path.dentry && path.dentry->d_flags & DCACHE_MOUNTED)
+		stat->attributes |= STATX_ATTR_AUTOMOUNT;
+
+out_path:
+	path_put(&path);
+	if (retry_estale(error, lookup_flags)) {
+		lookup_flags |= LOOKUP_REVAL;
+		goto retry;
+	}
+out:
+	return error;
+}
+EXPORT_SYMBOL(vfs_statx);
+
+SYSCALL_DEFINE5(statx,
+		int, dfd, const char __user *, filename, unsigned, flags,
+		unsigned int, mask,
+		struct statx __user *, buffer)
+{
+	struct kstat stat;
+	int error;
+
+	if (mask & STATX__RESERVED)
+		return -EINVAL;
+	if ((flags & AT_STATX_SYNC_TYPE) == AT_STATX_SYNC_TYPE)
+		return -EINVAL;
+
+	error = vfs_statx(dfd, filename, flags, &stat, mask);
+	if (error)
+		return error;
+
+	return cp_statx(&stat, buffer);
+}
