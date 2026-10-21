@@ -662,6 +662,23 @@ void hdd_process_injection_queue_work(void *arg)
 
 				hdd_inject_debug("Frame queued to WMA successfully: session_id=%u, latency=%llu us",
 						 req->session_id, total_latency);
+
+				/* Retry: send additional copies for deauth/disassoc reliability.
+				 * Only active when retry_count > 0 (explicit userspace request).
+				 * Normal injection (retry_count=0) is completely unaffected.
+				 */
+				if (req->retry_count > 0) {
+					uint8_t _i;
+					uint8_t _retries = req->retry_count < 5 ? req->retry_count : 5;
+					for (_i = 0; _i < _retries; _i++) {
+						qdf_sleep(15);
+						wma_queue_injection_frame(
+							(tp_wma_handle)injection_ctx->wma_handle,
+							req, tx_vdev_id);
+					}
+					hdd_inject_debug("Sent %u retry copies: session_id=%u",
+							 _retries, req->session_id);
+				}
 			} else {
 				hdd_update_injection_stats(injection_ctx->adapter, HDD_INJECTION_STAT_FRAMES_DROPPED, 1);
 				hdd_inject_err("Failed to queue frame to WMA: %d", wma_status);
