@@ -2045,7 +2045,7 @@ QDF_STATUS wma_handle_firmware_injection_error(tp_wma_handle wma_handle,
 	/* Attempt retry if appropriate and request is available */
 	if (should_retry && req) {
 		/* Check retry count to avoid infinite loops */
-		if (req->retry_count < 3) { /* Maximum 3 retries */
+		if (0) { /* Retries disabled */
 			WMA_LOGI("Retrying injection after %u ms delay (attempt %u)",
 				 retry_delay_ms, req->retry_count + 1);
 			
