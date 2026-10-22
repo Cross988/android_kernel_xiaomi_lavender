@@ -29,6 +29,8 @@
 #include <linux/init.h>
 #include <linux/etherdevice.h>
 #include <linux/wireless.h>
+#include <linux/cred.h>
+#include <linux/uidgid.h>
 #include <wlan_hdd_includes.h>
 #include <net/arp.h>
 #include <net/cfg80211.h>
@@ -94,6 +96,18 @@
 
 #include "wmi_unified.h"
 #include "wmi_unified_param.h"
+#include <cdp_txrx_cmn.h>
+#include <cdp_txrx_misc.h>
+#include <qca_vendor.h>
+#include "wlan_hdd_bcn_recv.h"
+#include "wlan_hdd_oemdata.h"
+#include "sme_api.h"
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+#include "wlan_hdd_frame_inject.h"
+#endif
+#include "hif.h"
+#include "wlan_hdd_ioctl.h"
+#include "cdp_txrx_cfg.h"
 
 #define g_mode_rates_size (12)
 #define a_mode_rates_size (8)
@@ -5554,6 +5568,45 @@ nla_put_failure:
 }
 #endif
 
+#define ANT_DIV_SET_PERIOD(probe_period, stay_period) \
+	((1 << 26) | \
+	 (((probe_period) & 0x1fff) << 13) | \
+	 ((stay_period) & 0x1fff))
+
+#define ANT_DIV_SET_SNR_DIFF(snr_diff) \
+	((1 << 27) | \
+	 ((snr_diff) & 0x1fff))
+
+#define ANT_DIV_SET_PROBE_DWELL_TIME(probe_dwell_time) \
+	((1 << 28) | \
+	 ((probe_dwell_time) & 0x1fff))
+
+#define ANT_DIV_SET_WEIGHT(mgmt_snr_weight, data_snr_weight, ack_snr_weight) \
+	((1 << 29) | \
+	 (((mgmt_snr_weight) & 0xff) << 16) | \
+	 (((data_snr_weight) & 0xff) << 8) | \
+	 ((ack_snr_weight) & 0xff))
+
+#define ANT_DIV_SET_PROBE_THRESHOLD(wlan_probe_thre, bt_probe_thre) \
+	((1 << 30) | \
+	 (((wlan_probe_thre) & 0x1fff) << 13) | \
+	 ((bt_probe_thre) & 0x1fff))
+
+#define ANT_DIV_SET_PROBE_CNT(wlan_probe_cnt, bt_probe_cnt) \
+	((1 << 31) | \
+	 (((wlan_probe_cnt) & 0x1fff) << 13) | \
+	 ((bt_probe_cnt) & 0x1fff))
+
+#define ANT_DIV_SET_RSSI_DIFF(wlan_rssi_diff, bt_rssi_diff) \
+	((1 << 27) | \
+	 (((wlan_rssi_diff) & 0x1fff) << 13) | \
+	 ((bt_rssi_diff) & 0x1fff))
+
+#define ANT_DIV_PROBE_WLAN_RSSI_THRESHOLD \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_WLAN_RSSI_THRESHOLD
+#define ANT_DIV_PROBE_BT_RSSI_THRESHOLD \
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_BT_RSSI_THRESHOLD
+
 #define RX_REORDER_TIMEOUT_VOICE \
 	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_REORDER_TIMEOUT_VOICE
 #define RX_REORDER_TIMEOUT_VIDEO \
@@ -5600,6 +5653,30 @@ wlan_hdd_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_CHAIN] = {.type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_SELFTEST] = {.type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_SELFTEST_INTVL] = {.type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_PERIOD] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_STAY_PERIOD] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_SNR_DIFF] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_DWELL_TIME] = {
+		.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_MGMT_SNR_WEIGHT] = {
+		.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_DATA_SNR_WEIGHT] = {
+		.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_ACK_SNR_WEIGHT] = {
+		.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_COUNT_WLAN] = {
+		.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_COUNT_BT] = {
+		.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_WLAN_RSSI_THRESHOLD] = {
+		.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_BT_RSSI_THRESHOLD] = {
+		.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_SWITCH_WLAN_RSSI_DIFF] = {
+		.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_SWITCH_BT_RSSI_DIFF] = {
+		.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_RESTRICT_OFFCHANNEL] = {.type = NLA_U8},
 	[RX_REORDER_TIMEOUT_VOICE] = {.type = NLA_U32},
 	[RX_REORDER_TIMEOUT_VIDEO] = {.type = NLA_U32},
 	[RX_REORDER_TIMEOUT_BESTEFFORT] = {.type = NLA_U32},
@@ -5716,53 +5793,45 @@ static int wlan_hdd_save_default_scan_ies(hdd_context_t *hdd_ctx,
 }
 
 static int hdd_config_scan_default_ies(hdd_adapter_t *adapter,
-				       const struct nlattr *attr)
+                                       const struct nlattr *attr)
 {
-	hdd_context_t *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
-	uint8_t *scan_ie;
-	uint16_t scan_ie_len;
-	QDF_STATUS status;
-
-	if (!attr)
-		return 0;
-
-	scan_ie_len = nla_len(attr);
-	hdd_debug("IE len %d session %d device mode %d",
-		  scan_ie_len, adapter->sessionId, adapter->device_mode);
-
-	if (!scan_ie_len) {
-		hdd_err("zero-length IE prohibited");
-		return -EINVAL;
-	}
-
-	if (scan_ie_len > MAX_DEFAULT_SCAN_IE_LEN) {
-		hdd_err("IE length %d exceeds max of %d",
-			scan_ie_len, MAX_DEFAULT_SCAN_IE_LEN);
-		return -EINVAL;
-	}
-
-	scan_ie = nla_data(attr);
-	if (!hdd_is_ie_valid(scan_ie, scan_ie_len)) {
-		hdd_err("Invalid default scan IEs");
-		return -EINVAL;
-	}
-
-	if (wlan_hdd_save_default_scan_ies(hdd_ctx, adapter,
-					   scan_ie, scan_ie_len))
-		hdd_err("Failed to save default scan IEs");
-
-	if (adapter->device_mode == QDF_STA_MODE) {
-		status = sme_set_default_scan_ie(hdd_ctx->hHal,
-						 adapter->sessionId, scan_ie,
-						 scan_ie_len);
-		if (QDF_STATUS_SUCCESS != status) {
-			hdd_err("failed to set default scan IEs in sme: %d",
-				status);
-			return -EPERM;
-		}
-	}
-
-	return 0;
+        hdd_context_t *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
+        uint8_t *scan_ie;
+        uint16_t scan_ie_len;
+        QDF_STATUS status;
+        if (!attr)
+                return 0;
+        scan_ie_len = nla_len(attr);
+        hdd_debug("IE len %d session %d device mode %d",
+                  scan_ie_len, adapter->sessionId, adapter->device_mode);
+        if (!scan_ie_len) {
+                hdd_err("zero-length IE prohibited");
+                return -EINVAL;
+        }
+        if (scan_ie_len > MAX_DEFAULT_SCAN_IE_LEN) {
+                hdd_err("IE length %d exceeds max of %d",
+                        scan_ie_len, MAX_DEFAULT_SCAN_IE_LEN);
+                return -EINVAL;
+        }
+        scan_ie = nla_data(attr);
+        if (!hdd_is_ie_valid(scan_ie, scan_ie_len)) {
+                hdd_err("Invalid default scan IEs");
+                return -EINVAL;
+        }
+        if (wlan_hdd_save_default_scan_ies(hdd_ctx, adapter,
+                                           scan_ie, scan_ie_len))
+                hdd_err("Failed to save default scan IEs");
+        if (adapter->device_mode == QDF_STA_MODE) {
+                status = sme_set_default_scan_ie(hdd_ctx->hHal,
+                                                 adapter->sessionId, scan_ie,
+                                                 scan_ie_len);
+                if (QDF_STATUS_SUCCESS != status) {
+                        hdd_err("failed to set default scan IEs in sme: %d",
+                                status);
+                        return -EPERM;
+                }
+        }
+        return 0;
 }
 
 /**
@@ -13464,13 +13533,19 @@ const struct wiphy_vendor_command hdd_wiphy_vendor_commands[] = {
 		.doit = wlan_hdd_cfg80211_configure_tdls_mode
 	},
 #endif
-	{
-		.info.vendor_id = QCA_NL80211_VENDOR_ID,
-		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_SAR_LIMITS,
-		.flags = WIPHY_VENDOR_CMD_NEED_WDEV |
-			 WIPHY_VENDOR_CMD_NEED_RUNNING,
-		.doit = wlan_hdd_cfg80211_get_sar_power_limits
-	},
+        {
+                .info.vendor_id = QCA_NL80211_VENDOR_ID,
+                .info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_SAR_LIMITS,
+                .flags = WIPHY_VENDOR_CMD_NEED_WDEV |
+                         WIPHY_VENDOR_CMD_NEED_RUNNING,
+                .doit = wlan_hdd_cfg80211_get_sar_power_limits
+        },
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+        FEATURE_FRAME_INJECTION_VENDOR_COMMANDS,
+#endif
+#ifdef WLAN_BCN_RECV_FEATURE
+        BCN_RECV_FEATURE_VENDOR_COMMANDS,
+#endif
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_SAR_LIMITS,
@@ -21364,6 +21439,66 @@ enum cds_con_mode wlan_hdd_convert_nl_iftype_to_hdd_type(
 }
 
 /**
+ * wlan_hdd_cfg80211_get_channel() - Report current operating channel
+ * @wiphy: wiphy handle
+ * @wdev: wireless_dev handle
+ * @chandef: output channel definition
+ *
+ * Required by nl80211 (NL80211_CMD_GET_INTERFACE) and wext (SIOCGIWFREQ)
+ * so that tools like aireplay-ng / mdk3 can determine the current channel.
+ *
+ * Return: 0 on success, -ENODATA if no channel is set.
+ */
+static int wlan_hdd_cfg80211_get_channel(struct wiphy *wiphy,
+                                         struct wireless_dev *wdev,
+                                         struct cfg80211_chan_def *chandef)
+{
+        hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(wdev->netdev);
+        hdd_station_ctx_t *sta_ctx;
+        struct hdd_mon_set_ch_info *ch_info;
+        struct ieee80211_channel *chan;
+        uint8_t channel = 0;
+        uint32_t freq = 0;
+        if (!adapter)
+                return -ENODATA;
+        /* Primary source: adapter->mon_chan (set by both boot-time
+         * monitor mode and cfg80211 set_monitor_channel).
+         */
+        channel = adapter->mon_chan;
+        /* Fallback: station context ch_info (set by hdd_mon_select_cbmode
+         * in the roam callback path).
+         */
+        if (!channel) {
+                sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+                ch_info = &sta_ctx->ch_info;
+                channel = ch_info->channel;
+        }
+        if (!channel)
+                return -ENODATA;
+        if (0 != hdd_wlan_get_freq(channel, &freq))
+                return -ENODATA;
+        chan = ieee80211_get_channel(wiphy, freq);
+        if (!chan)
+                return -ENODATA;
+        cfg80211_chandef_create(chandef, chan, NL80211_CHAN_NO_HT);
+        /* Upgrade width if we know the bandwidth */
+        switch (adapter->mon_bandwidth) {
+        case CH_WIDTH_40MHZ:
+                chandef->width = NL80211_CHAN_WIDTH_40;
+                break;
+        case CH_WIDTH_80MHZ:
+                chandef->width = NL80211_CHAN_WIDTH_80;
+                break;
+        case CH_WIDTH_160MHZ:
+                chandef->width = NL80211_CHAN_WIDTH_160;
+                break;
+        default:
+                break;
+        }
+        return 0;
+}
+
+/**
  * wlan_hdd_cfg80211_set_mon_ch() - Set monitor mode capture channel
  * @wiphy: Handle to struct wiphy to get handle to module context.
  * @chandef: Contains information about the capture channel to be set.
@@ -21428,16 +21563,24 @@ static int __wlan_hdd_cfg80211_set_mon_ch(struct wiphy *wiphy,
 			sec_ch = chan_num - 4;
 	}
 	cds_set_channel_params(chan_num, sec_ch, &ch_params);
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_STOP_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
+	msleep(50);
 	status = sme_roam_channel_change_req(hal_hdl, bssid, &ch_params,
 						 &roam_profile);
 	if (status) {
 		hdd_err("Failed to set sme_RoamChannel for monitor mode status: %d",
 			status);
 		ret = qdf_status_to_os_return(status);
-		return ret;
 	}
-	EXIT();
-	return 0;
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_START_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
+        adapter->mon_chan = chan_num;
+        adapter->mon_bandwidth = ch_params.ch_width;
+        EXIT();
+	return ret;
 }
 
 /**
@@ -21952,6 +22095,7 @@ static struct cfg80211_ops wlan_hdd_cfg80211_ops = {
 	.channel_switch = wlan_hdd_cfg80211_channel_switch,
 #endif
 	.set_monitor_channel = wlan_hdd_cfg80211_set_mon_ch,
+        .get_channel = wlan_hdd_cfg80211_get_channel,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)) || \
 	defined(CFG80211_ABORT_SCAN)
 	.abort_scan = wlan_hdd_cfg80211_abort_scan,

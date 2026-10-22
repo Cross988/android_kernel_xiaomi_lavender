@@ -5499,9 +5499,16 @@ static void lim_process_sme_channel_change_request(tpAniSirGlobal mac_ctx,
 		return;
 	}
 
-	if (session_entry->currentOperChannel ==
-			ch_change_req->targetChannel) {
-		pe_err("target CH is same as current CH");
+        if (session_entry->currentOperChannel ==
+                        ch_change_req->targetChannel) {
+                pe_err("target CH is same as current CH");
+                /* TODO(injection): upstream patch also force-posts a
+                 * monitor-mode vdev-up here (eWNI_SME_MONITOR_MODE_VDEV_UP)
+                 * to keep injection alive across redundant channel-set
+                 * calls. That message type/handler doesn't exist in this
+                 * tree; needs proper SME-side implementation if repeated
+                 * channel-hop tools (airodump-ng etc.) show injection
+                 * stalling after redundant same-channel requests. */
 		return;
 	}
 

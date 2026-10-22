@@ -71,6 +71,9 @@
 #include "cds_utils.h"
 #include "wlan_hdd_packet_filter_api.h"
 #include "cds_concurrency.h"
+#include "wma.h"
+#include "wma_frame_inject.h"
+#include "wlan_hdd_wext.h"
 
 /* Preprocessor definitions and constants */
 #define HDD_SSR_BRING_UP_TIME 30000
@@ -1385,6 +1388,20 @@ static void hdd_resume_wlan(void)
 		if (pAdapter->device_mode == QDF_STA_MODE)
 			status = hdd_disable_default_pkt_filters(pAdapter);
 		hdd_conf_resume_ind(pAdapter);
+		if (pAdapter->device_mode == QDF_MONITOR_MODE &&
+		    pAdapter->mon_chan) {
+			/* Force channel retune and re-init injection state after
+			 * resume. Firmware WoW exit leaves the monitor vdev in a
+			 * broken state after long sleeps — channel retune resets
+			 * the RX filter, hdd_init_frame_injection restores the
+			 * TX injection path.
+			 */
+			wlan_hdd_set_mon_chan(pAdapter, pAdapter->mon_chan,
+					     pAdapter->mon_bandwidth);
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+			hdd_init_frame_injection(pAdapter);
+#endif
+		}
 
 		status = hdd_get_next_adapter(pHddCtx, pAdapterNode, &pNext);
 		pAdapterNode = pNext;
@@ -1532,6 +1549,17 @@ QDF_STATUS hdd_wlan_shutdown(void)
 
 	hdd_bus_bw_compute_timer_stop(pHddCtx);
 
+
+	/* Destroy injection TX helper vdev before stopping modules.
+	 * During SSR the firmware is already dead so wmi_handle may
+	 * be NULL -- pre_stop_cleanup handles both cases safely and
+	 * always zeros g_inj_tx_vdev so re-init starts clean.
+	 */
+	{
+		tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
+		if (wma)
+			wma_injection_pre_stop_cleanup(wma);
+	}
 	hdd_wlan_stop_modules(pHddCtx, false);
 
 	hdd_lpass_notify_stop(pHddCtx);
@@ -2132,6 +2160,16 @@ fetch_adapter:
 		hdd_err("IPA not ready to suspend!");
 		wlan_hdd_inc_suspend_stats(pHddCtx, SUSPEND_FAIL_IPA);
 		return -EAGAIN;
+	}
+
+	/* Flush injection queue before suspend to prevent in-flight
+	 * frames from racing with firmware WoW entry. Do NOT destroy
+	 * the injection vdev here — destroying it breaks TX after resume.
+	 */
+	{
+		tp_wma_handle wma = cds_get_context(QDF_MODULE_ID_WMA);
+		if (wma)
+			wma_flush_injection_queue(wma);
 	}
 
 	/* Wait for the target to be ready for suspend */

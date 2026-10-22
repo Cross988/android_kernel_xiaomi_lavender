@@ -4424,11 +4424,14 @@ static int __iw_get_freq(struct net_device *dev, struct iw_request_info *info,
 			fwrq->m = freq;
 			fwrq->e = MHZ;
 		}
+	} else if (pAdapter->device_mode == QDF_MONITOR_MODE &&
+			   pAdapter->mon_chan) {
+		uint32_t mon_freq = 0;
+		if (0 == hdd_wlan_get_freq(pAdapter->mon_chan, &mon_freq)) {
+			fwrq->m = mon_freq;
+			fwrq->e = MHZ;
+		}
 	} else {
-		/* Set Exponent parameter as 6 (MHZ) in struct iw_freq
-		 * iwlist & iwconfig command shows frequency into proper
-		 * format (2.412 GHz instead of 246.2 MHz)
-		 */
 		fwrq->m = 0;
 		fwrq->e = MHZ;
 	}
@@ -12094,11 +12097,10 @@ int wlan_hdd_set_mon_chan(hdd_adapter_t *adapter, uint32_t chan,
 	tCsrRoamProfile roam_profile;
 	struct ch_params_s ch_params;
 
-	if (QDF_GLOBAL_MONITOR_MODE != hdd_get_conparam()) {
-		hdd_err("Not supported, device is not in monitor mode");
-		return -EINVAL;
-	}
-
+	/* Allow channel set in both global monitor and mixed monitor mode
+	 * (NetHunter uses mixed mode where conparam is MISSION_MODE but
+	 * the adapter device_mode is QDF_MONITOR_MODE).
+	 */
 	hdd_debug("Set monitor mode Channel %d", chan);
 	qdf_mem_zero(&roam_profile, sizeof(roam_profile));
 	roam_profile.ChannelInfo.ChannelList = &ch_info->channel;
@@ -12116,12 +12118,26 @@ int wlan_hdd_set_mon_chan(hdd_adapter_t *adapter, uint32_t chan,
 		hdd_err("Invalid capture channel or bandwidth for a country");
 		return -EINVAL;
 	}
+	/* Stop TX queue to prevent injection frames from racing with the
+	 * firmware channel change. sme_roam_channel_change_req returns
+	 * before firmware completes the change, so frames sent after the
+	 * command but before firmware finishes will assert wal_concurrenc.
+	 */
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_STOP_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
+	msleep(50);
+
 	status = sme_roam_channel_change_req(hal_hdl, bssid, &ch_params,
 					     &roam_profile);
 	if (status) {
 		hdd_err("Status: %d Failed to set sme_roam Channel for monitor mode",
 			status);
 	}
+
+	wlan_hdd_netif_queue_control(adapter,
+				     WLAN_START_ALL_NETIF_QUEUE,
+				     WLAN_CONTROL_PATH);
 
 	adapter->mon_chan = chan;
 	adapter->mon_bandwidth = bandwidth;
@@ -13526,6 +13542,60 @@ static const struct iw_priv_args we_private_args[] = {
 	 IW_PRIV_TYPE_CHAR | MAX_FTIE_SIZE,
 	 0,
 	 "set_ft_ies"},
+};
+
+/**
+ * hdd_wext_giwfreq() - SIOCGIWFREQ handler for monitor mode
+ * @dev: net_device
+ * @info: request info
+ * @freq: output frequency
+ * @extra: extra data (unused)
+ *
+ * Reports the current operating frequency so that tools like aireplay-ng
+ * and mdk3 can determine the channel.  Reads adapter->mon_chan_freq first
+ * (set by cfg80211 set_monitor_channel), falls back to ch_info.freq.
+ *
+ * Return: 0 on success, negative errno on failure.
+ */
+static int hdd_wext_giwfreq(struct net_device *dev,
+                            struct iw_request_info *info,
+                            struct iw_freq *freq, char *extra)
+{
+        hdd_adapter_t *adapter = WLAN_HDD_GET_PRIV_PTR(dev);
+        hdd_station_ctx_t *sta_ctx;
+        uint8_t channel = 0;
+        uint32_t chan_freq = 0;
+
+        if (!adapter)
+                return -EINVAL;
+
+        channel = adapter->mon_chan;
+
+        if (!channel) {
+                sta_ctx = WLAN_HDD_GET_STATION_CTX_PTR(adapter);
+                if (sta_ctx)
+                        channel = sta_ctx->ch_info.channel;
+        }
+
+        if (!channel)
+                return -EINVAL;
+
+        if (0 != hdd_wlan_get_freq(channel, &chan_freq))
+                return -EINVAL;
+
+        freq->m = chan_freq;
+        freq->e = 6;
+        return 0;
+}
+
+/*
+ * Standard wext handler table.  Only SIOCGIWFREQ is needed — tools like
+ * aireplay-ng use it to determine the current channel.  Without this, the
+ * driver's we_handler_def (num_standard=0) prevents cfg80211's wext compat
+ * layer from ever being reached, causing "channel -1".
+ */
+static const iw_handler we_standard[] = {
+	[IW_IOCTL_IDX(SIOCGIWFREQ)] = (iw_handler)hdd_wext_giwfreq,
 };
 
 const struct iw_handler_def we_handler_def = {

@@ -6306,6 +6306,17 @@ static bool wma_is_wow_applicable(tp_wma_handle wma)
 {
 	int vdev_id;
 
+	/* Do not enable WoW if any vdev is in monitor mode.
+	 * wlan_wow_enhan crashes the firmware when monitor mode
+	 * injection vdev is active.
+	 */
+	for (vdev_id = 0; vdev_id < wma->max_bssid; vdev_id++) {
+		if (wma->interfaces[vdev_id].type == WMI_VDEV_TYPE_MONITOR) {
+			WMA_LOGD("Monitor vdev active, skipping WoW");
+			return false;
+		}
+	}
+
 	if (wma_support_wow_for_beaconing(wma)) {
 		WMA_LOGD("vdev is in beaconning mode, enabling wow");
 		return true;
@@ -6535,8 +6546,15 @@ static QDF_STATUS wma_send_host_wakeup_ind_to_fw(tp_wma_handle wma)
 		WMA_LOGD("Host wakeup received");
 	}
 
-	if (QDF_STATUS_SUCCESS == qdf_status)
+	if (QDF_STATUS_SUCCESS == qdf_status) {
 		wmi_set_target_suspend(wma->wmi_handle, false);
+		/* Unpause all vdevs on non-WoW resume; wma_disable_wow_in_fw
+		 * does this for WoW path but wma_resume_target skips it,
+		 * leaving TX permanently paused after screen-sleep resume.
+		 */
+		wma_set_wow_bus_suspend(wma, 0);
+		wma_unpause_vdev(wma);
+	}
 
 	return qdf_status;
 }
@@ -8683,7 +8701,7 @@ static int __wma_bus_resume(WMA_HANDLE handle)
 	}
 
 	wow_mode = wma_is_wow_mode_selected(handle);
-	WMA_LOGD("%s: wow mode %d", __func__, wow_mode);
+	WMA_LOGE("[INJECT-DBG] wow mode %d", wow_mode);
 
 	wma_peer_debug_log(DEBUG_INVALID_VDEV_ID, DEBUG_BUS_RESUME,
 			   DEBUG_INVALID_PEER_ID, NULL, NULL,
@@ -8953,8 +8971,15 @@ QDF_STATUS wma_resume_target(WMA_HANDLE handle)
 		WMA_LOGD("Host wakeup received");
 	}
 
-	if (QDF_STATUS_SUCCESS == qdf_status)
+	if (QDF_STATUS_SUCCESS == qdf_status) {
 		wmi_set_target_suspend(wma->wmi_handle, false);
+		/* Unpause all vdevs on non-WoW resume; wma_disable_wow_in_fw
+		 * does this for WoW path but wma_resume_target skips it,
+		 * leaving TX permanently paused after screen-sleep resume.
+		 */
+		wma_set_wow_bus_suspend(wma, 0);
+		wma_unpause_vdev(wma);
+	}
 
 	return qdf_status;
 }

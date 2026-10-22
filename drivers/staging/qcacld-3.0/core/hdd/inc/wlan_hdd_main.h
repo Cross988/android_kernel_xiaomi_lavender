@@ -53,6 +53,12 @@
 #include "wlan_hdd_nan_datapath.h"
 #include "target_if_def_config.h"
 #include <qdf_idr.h>
+#include "wlan_hdd_oemdata.h"
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+#include "wlan_hdd_frame_inject.h"
+#endif
+#include <net/neighbour.h>
+#include <net/netevent.h>
 #include "wma_sar_public_structs.h"
 
 /** Number of Tx Queues */
@@ -227,6 +233,10 @@ static inline bool in_compat_syscall(void) { return is_compat_task(); }
 		hdd_logfl(QDF_TRACE_LEVEL_ERROR, format, ## args)
 #define hdd_warn(format, args...) \
 		hdd_logfl(QDF_TRACE_LEVEL_WARN, format, ## args)
+#define hdd_warn_rl(format, args...) \
+		hdd_warn(format, ## args)
+#define hdd_err_rl(format, args...) \
+		hdd_err(format, ## args)
 #define hdd_notice(format, args...) \
 		hdd_logfl(QDF_TRACE_LEVEL_INFO, format, ## args)
 #define hdd_info(format, args...) \
@@ -1664,6 +1674,14 @@ struct hdd_adapter_s {
 #endif
 	struct hdd_apf_context apf_context;
 	bool send_mode_change;
+	bool handle_feature_update;
+
+	qdf_work_t netdev_features_update_work;
+	bool delete_in_progress;
+
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+	struct hdd_injection_ctx *injection_ctx;
+#endif
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(pAdapter) (&(pAdapter)->sessionCtx.station)

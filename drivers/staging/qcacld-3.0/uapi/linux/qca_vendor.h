@@ -3402,6 +3402,149 @@ enum qca_wlan_vendor_attr_config {
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_GTX = 57,
 
+	/*
+	 * Attribute to configure disconnect IEs to the driver.
+	 * This carries an array of unsigned 8-bit characters.
+	 *
+	 * If this is configured, driver shall fill the IEs in disassoc/deauth
+	 * frame.
+	 * These IEs are expected to be considered only for the next
+	 * immediate disconnection (disassoc/deauth frame) originated by
+	 * the DUT, irrespective of the entity (user space/driver/firmware)
+	 * triggering the disconnection.
+	 * The host drivers are not expected to use the IEs set through
+	 * this interface for further disconnections after the first immediate
+	 * disconnection initiated post the configuration.
+	 * If the IEs are also updated through cfg80211 interface (after the
+	 * enhancement to cfg80211_disconnect), host driver is expected to
+	 * take the union of IEs from both of these interfaces and send in
+	 * further disassoc/deauth frames.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_DISCONNECT_IES = 58,
+
+	/* 8-bit unsigned value for ELNA bypass.
+	 * 1-Enable, 0-Disable
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ELNA_BYPASS = 59,
+
+	QCA_WLAN_VENDOR_ATTR_CONFIG_BEACON_REPORT_FAIL = 60,
+
+	/* 8-bit unsigned value. This attribute enables/disables the host driver
+	 * to send roam reason information in the reassociation request to the
+	 * AP. 1-Enable, 0-Disable.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ROAM_REASON = 61,
+
+	/*
+	 * 8-bit unsigned value to trigger Optimized Power Management:
+	 * 1-Enable, 0-Disable
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_OPTIMIZED_POWER_MANAGEMENT = 71,
+
+	/* 8-bit unsigned value. This attribute takes the QOS/access category
+	 * value represented by the enum qca_wlan_ac_type and expects the driver
+	 * to upgrade the UDP frames to this QOS. The value of QCA_WLAN_AC_ALL
+	 * is invalid for this attribute. This will override the DSCP value
+	 * configured in the frame with the intention to only upgrade the QOS.
+	 * That said, it is not intended to downgrade the QOS for the frames.
+	 * Set the value to 0 ( corresponding to BE ) if the QOS upgrade needs
+	 * to disable.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_UDP_QOS_UPGRADE = 72,
+
+	/* 8-bit unsigned value. This attribute is used to dynamically configure
+	 * the number of chains to be used for transmitting data. This
+	 * configuration is allowed only when in connected state and will be
+	 * effective until disconnected. The driver rejects this configuration
+	 * if the number of spatial streams being used in the current connection
+	 * cannot be supported by this configuration.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_NUM_TX_CHAINS = 73,
+
+	/* 8-bit unsigned value. This attribute is used to dynamically configure
+	 * the number of chains to be used for receiving data. This
+	 * configuration is allowed only when in connected state and will be
+	 * effective until disconnected. The driver rejects this configuration
+	 * if the number of spatial streams being used in the current connection
+	 * cannot be supported by this configuration.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_NUM_RX_CHAINS = 74,
+
+	/* 8-bit unsigned value. This attribute is used to dynamically configure
+	 * the number of spatial streams used for transmitting the data. When
+	 * configured in the disconnected state, the configured value will
+	 * be considered for the following connection attempt.
+	 * If the NSS is updated after the connection, the updated NSS value
+	 * is notified to the peer using the Operating Mode Notification/Spatial
+	 * Multiplexing Power Save frame.
+	 * The TX NSS value configured after the connection shall not be greater
+	 * than the value negotiated during the connection. Any such higher
+	 * value configuration shall be treated as invalid configuration by
+	 * the driver. This attribute shall be configured along with
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_RX_NSS attribute to define the symmetric
+	 * configuration (such as 2X2 or 1X1) or the asymmetric
+	 * configuration (such as 1X2).
+	 * If QCA_WLAN_VENDOR_ATTR_CONFIG_NSS attribute is also provided along
+	 * with this QCA_WLAN_VENDOR_ATTR_CONFIG_TX_NSS attribute the driver
+	 * will update the TX NSS based on QCA_WLAN_VENDOR_ATTR_CONFIG_TX_NSS.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_TX_NSS = 77,
+
+	/* 8-bit unsigned value. This attribute is used to dynamically configure
+	 * the number of spatial streams used for receiving the data. When
+	 * configured in the disconnected state, the configured value will
+	 * be considered for the following connection attempt.
+	 * If the NSS is updated after the connection, the updated NSS value
+	 * is notified to the peer using the Operating Mode Notification/Spatial
+	 * Multiplexing Power Save frame.
+	 * The RX NSS value configured after the connection shall not be greater
+	 * than the value negotiated during the connection. Any such higher
+	 * value configuration shall be treated as invalid configuration by
+	 * the driver. This attribute shall be configured along with
+	 * QCA_WLAN_VENDOR_ATTR_CONFIG_TX_NSS attribute to define the symmetric
+	 * configuration (such as 2X2 or 1X1) or the asymmetric
+	 * configuration (such as 1X2).
+	 * If QCA_WLAN_VENDOR_ATTR_CONFIG_NSS attribute is also provided along
+	 * with this QCA_WLAN_VENDOR_ATTR_CONFIG_RX_NSS attribute the driver
+	 * will update the RX NSS based on QCA_WLAN_VENDOR_ATTR_CONFIG_RX_NSS.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_RX_NSS = 78,
+
+	/* 16-bit unsigned value. For probing RSSI on other antennas, this
+	 * attribute specifies the number of WLAN probes.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_COUNT_WLAN = 124,
+
+	/* 16-bit unsigned value. For probing RSSI on other antennas, this
+	 * attribute specifies the number of BT probes.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_COUNT_BT = 125,
+
+	/* 16-bit unsigned value. This attribute specifies the WLAN RSSI
+	 * threshold. The firmware will start to probe RSSI on other antenna
+	 * if WLAN RSSI is lower than the threshold.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_WLAN_RSSI_THRESHOLD = 126,
+
+	/* 16-bit unsigned value. This attribute specifies the BT RSSI
+	 * threshold. The firmware will start to probe RSSI on other antenna
+	 * if BT RSSI is lower than the threshold.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_PROBE_BT_RSSI_THRESHOLD = 127,
+
+	/* 16-bit unsigned value. This attribute specifies the WLAN RSSI
+	 * difference. The firmware will select a better antenna if WLAN RSSI
+	 * difference is larger than the value.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_SWITCH_WLAN_RSSI_DIFF = 128,
+
+	/* 16-bit unsigned value. This attribute specifies the BT RSSI
+	 * difference. The firmware will select a better antenna if WLAN RSSI
+	 * difference larger than the value.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ANT_DIV_SWITCH_BT_RSSI_DIFF = 129,
+
+	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST - 1,

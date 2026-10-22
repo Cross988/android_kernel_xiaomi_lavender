@@ -40,6 +40,9 @@
 #include "wlan_hdd_scan.h"
 #include "wlan_hdd_ipa.h"
 #include "wlan_hdd_debugfs.h"
+#include "wlan_hdd_wext.h"
+#include "wma.h"
+#include "wma_frame_inject.h"
 
 #ifdef MODULE
 #define WLAN_MODULE_NAME  module_name(THIS_MODULE)
@@ -906,6 +909,36 @@ static int __wlan_hdd_bus_resume(void)
 	}
 
 	hdd_info("bus resume succeeded");
+
+#ifdef FEATURE_FRAME_INJECTION_SUPPORT
+	{
+		hdd_adapter_list_node_t *node = NULL, *next = NULL;
+		hdd_adapter_t *adapter;
+		QDF_STATUS s = hdd_get_front_adapter(hdd_ctx, &node);
+
+		while (node && s == QDF_STATUS_SUCCESS) {
+			adapter = node->pAdapter;
+			if (adapter->device_mode == QDF_MONITOR_MODE &&
+			    adapter->mon_chan) {
+				/*
+				 * WoW exit leaves the monitor vdev in firmware
+				 * broken state. Mirror the recovery sequence
+				 * hdd_start_all_adapters uses for monitor mode:
+				 * full station-mode vdev reinit, re-register RX
+				 * callback, retune channel, then restore injection.
+				 */
+				hdd_init_station_mode(adapter);
+				hdd_set_mon_rx_cb(adapter->dev);
+				wlan_hdd_set_mon_chan(adapter, adapter->mon_chan,
+						     adapter->mon_bandwidth);
+				msleep(200);
+				hdd_init_frame_injection(adapter);
+			}
+			s = hdd_get_next_adapter(hdd_ctx, node, &next);
+			node = next;
+		}
+	}
+#endif
 	return 0;
 
 out:

@@ -44,6 +44,10 @@ config QCACLD_FEATURE_GREEN_AP
 	bool "Enable Green AP feature"
 	default n
 
+config FEATURE_FRAME_INJECTION_SUPPORT
+	bool "Enable frame injection support for monitor mode"
+	default y
+
 config QCACLD_FEATURE_METERING
 	bool "Enable metering feature"
 	default n
